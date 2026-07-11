@@ -50,6 +50,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 		return string(constant.EndpointTypeOpenAIResponseCompact)
 	}
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
+		if common.IsImageGenerationModel(modelName) {
+			return string(constant.EndpointTypeImageGeneration)
+		}
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
 	return normalized
@@ -475,7 +478,8 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 	result := w.Result()
-	respBody, err := readTestResponseBody(result.Body, isStream)
+	isImageTest := info.RelayFormat == types.RelayFormatOpenAIImage
+	respBody, err := readTestResponseBody(result.Body, isStream || isImageTest)
 	if err != nil {
 		return testResult{
 			context:     c,
@@ -510,7 +514,11 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
-	common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	if isImageTest {
+		common.SysLog(fmt.Sprintf("testing image channel #%d, response received", channel.Id))
+	} else {
+		common.SysLog(fmt.Sprintf("testing channel #%d, response: \n%s", channel.Id, string(respBody)))
+	}
 	return testResult{
 		context:     c,
 		localErr:    nil,
@@ -706,12 +714,16 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 			}
 		case constant.EndpointTypeImageGeneration:
 			// 返回 ImageRequest
-			return &dto.ImageRequest{
+			request := &dto.ImageRequest{
 				Model:  model,
 				Prompt: "a cute cat",
 				N:      lo.ToPtr(uint(1)),
 				Size:   "1024x1024",
 			}
+			if isStream {
+				request.Stream = lo.ToPtr(true)
+			}
+			return request
 		case constant.EndpointTypeJinaRerank:
 			// 返回 RerankRequest
 			return &dto.RerankRequest{

@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -132,6 +133,10 @@ func TestGetAndValidOpenAIImageRequestNBounds(t *testing.T) {
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.wantErr)
+				var apiErr *types.NewAPIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+				require.True(t, types.IsSkipRetryError(apiErr))
 				return
 			}
 			require.NoError(t, err)
@@ -156,5 +161,97 @@ func TestGetAndValidOpenAIImageRequestNBounds(t *testing.T) {
 		_, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesEdits)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), boundErr)
+		var apiErr *types.NewAPIError
+		require.ErrorAs(t, err, &apiErr)
+		require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		require.True(t, types.IsSkipRetryError(apiErr))
 	})
+
+	t.Run("invalid JSON n type is a client error", func(t *testing.T) {
+		c := newJSONContext(t, `{"model":"gpt-image-1","prompt":"a cat","n":"many"}`)
+
+		_, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+		require.Error(t, err)
+		var apiErr *types.NewAPIError
+		require.ErrorAs(t, err, &apiErr)
+		require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+		require.True(t, types.IsSkipRetryError(apiErr))
+	})
+}
+
+func TestGetAndValidOpenAIImageRequestPartialImagesBounds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	boundErr := fmt.Sprintf("partial_images must be an integer between 0 and %d", dto.MaxPartialImages)
+	tests := []struct {
+		name      string
+		value     string
+		wantErr   bool
+		wantValue int
+	}{
+		{name: "zero", value: "0", wantValue: 0},
+		{name: "maximum", value: fmt.Sprintf("%d", dto.MaxPartialImages), wantValue: dto.MaxPartialImages},
+		{name: "negative", value: "-1", wantErr: true},
+		{name: "above maximum", value: fmt.Sprintf("%d", dto.MaxPartialImages+1), wantErr: true},
+		{name: "fraction", value: "1.5", wantErr: true},
+		{name: "quoted number", value: `"2"`, wantErr: true},
+		{name: "boolean", value: "true", wantErr: true},
+		{name: "null", value: "null", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run("json "+tt.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"model":"gpt-image-2","prompt":"a cat","partial_images":%s}`, tt.value)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			req, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), boundErr)
+				var apiErr *types.NewAPIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+				require.True(t, types.IsSkipRetryError(apiErr))
+				return
+			}
+			require.NoError(t, err)
+			var partialImages int
+			require.NoError(t, common.Unmarshal(req.PartialImages, &partialImages))
+			require.Equal(t, tt.wantValue, partialImages)
+		})
+
+		t.Run("multipart "+tt.name, func(t *testing.T) {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+			require.NoError(t, writer.WriteField("prompt", "edit this image"))
+			require.NoError(t, writer.WriteField("partial_images", tt.value))
+			require.NoError(t, writer.Close())
+
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/edits", &body)
+			c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+
+			req, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesEdits)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), boundErr)
+				var apiErr *types.NewAPIError
+				require.ErrorAs(t, err, &apiErr)
+				require.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+				require.True(t, types.IsSkipRetryError(apiErr))
+				return
+			}
+			require.NoError(t, err)
+			var partialImages int
+			require.NoError(t, common.Unmarshal(req.PartialImages, &partialImages))
+			require.Equal(t, tt.wantValue, partialImages)
+		})
+	}
+}
+
+func TestGPTImage2IsImageGenerationModel(t *testing.T) {
+	require.True(t, common.IsImageGenerationModel("gpt-image-2"))
 }

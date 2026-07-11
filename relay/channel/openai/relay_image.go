@@ -112,11 +112,13 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 	usage := &dto.Usage{}
 	var lastStreamData []byte
 	var completedImages int64
+	var upstreamErrorSeen bool
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
 		lastStreamData = raw
 		if isOpenAIImageStreamErrorEvent(raw) {
+			upstreamErrorSeen = true
 			// Record the error as a soft error; the scanner drives the final
 			// EndReason. HasErrors() flags the failure for logging/handling.
 			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
@@ -139,30 +141,37 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 		}
 	})
 
-	// StreamScannerHandler consumes the upstream [DONE]; re-emit it so the
-	// client still receives a terminal data: [DONE].
-	if info.StreamStatus != nil && info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone {
-		helper.Done(c)
-	}
-
 	applyUsagePostProcessing(info, usage, lastStreamData)
-	// Only trust completedImages when upstream finished the stream (done/eof).
-	// On client-side aborts (client_gone, or handler_stop from a failed client
-	// write) the counter undercounts what upstream actually generated and
-	// charged, so keep the requested n — otherwise a client could pay for one
-	// image by disconnecting right after the first completed event. The abort
-	// guard only blocks lowering the charge: if completed events already
-	// exceed the recorded n, bill the higher actual count regardless.
+	// Client-side aborts (client_gone, or handler_stop from a failed client
+	// write) can undercount what upstream generated, so keep the requested n to
+	// prevent disconnect-based billing evasion. For every upstream-controlled
+	// ending, settle against completed events; a stream with no completed image
+	// is a failed request and must be refunded by the caller.
 	if info.StreamStatus != nil {
-		upstreamFinished := info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone ||
-			info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF
+		clientAborted := !upstreamErrorSeen && (info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone ||
+			info.StreamStatus.EndReason == relaycommon.StreamEndReasonHandlerStop ||
+			info.StreamStatus.EndReason == relaycommon.StreamEndReasonPingFail)
 		requestedN := 1.0
 		if n, ok := info.PriceData.OtherRatios()["n"]; ok {
 			requestedN = n
 		}
-		if upstreamFinished || float64(completedImages) > requestedN {
+		if !clientAborted || float64(completedImages) > requestedN {
 			updateOpenAIImageCount(info, completedImages)
 		}
+		if !clientAborted && completedImages == 0 {
+			return usage, types.NewOpenAIError(
+				fmt.Errorf("upstream image stream ended without a completed image: %s", info.StreamStatus.Summary()),
+				types.ErrorCodeBadResponse,
+				http.StatusBadGateway,
+				types.ErrOptionWithSkipRetry(),
+			)
+		}
+	}
+	// StreamScannerHandler consumes the upstream [DONE]. Re-emit it only after
+	// confirming that the stream produced a completed image; a zero-result
+	// failure must not look like a normal terminal event to the client.
+	if info.StreamStatus != nil && info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone {
+		helper.Done(c)
 	}
 	return usage, nil
 }
