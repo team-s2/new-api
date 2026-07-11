@@ -6,6 +6,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
+// EncodedJSONRequest is a complete, already-marshaled JSON request body.
+// Adaptors use it for payloads that are substantially cheaper to construct
+// directly, such as multipart image edits converted to base64 JSON.
+type EncodedJSONRequest []byte
+
 // NewOutboundJSONBody wraps the already-marshaled upstream request body into a
 // BodyStorage. When disk cache is enabled and the payload exceeds the configured
 // threshold, the data is written to a temp file and the original []byte can be

@@ -33,10 +33,6 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 	return nil, errors.New("codex channel: endpoint not supported")
 }
 
-func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	return nil, errors.New("codex channel: endpoint not supported")
-}
-
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
@@ -54,6 +50,16 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	isCompact := info != nil && info.RelayMode == relayconstant.RelayModeResponsesCompact
+	if info != nil && info.IsChannelTest && isCodexResponsesLiteModel(info.UpstreamModelName) {
+		request.ParallelToolCalls = json.RawMessage("false")
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		} else {
+			reasoning := *request.Reasoning
+			request.Reasoning = &reasoning
+		}
+		request.Reasoning.Context = json.RawMessage(`"all_turns"`)
+	}
 
 	if info != nil && info.ChannelSetting.SystemPrompt != "" {
 		systemPrompt := info.ChannelSetting.SystemPrompt
@@ -118,6 +124,11 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	case relayconstant.RelayModeAlphaSearch:
 		// Alpha search responses are handled by relay.AlphaSearchHelper.
 		return nil, types.NewError(errors.New("codex channel: alpha search response should be handled by AlphaSearchHelper"), types.ErrorCodeInvalidRequest)
+	case relayconstant.RelayModeImagesGenerations, relayconstant.RelayModeImagesEdits:
+		if info.IsStream {
+			return openai.OpenaiImageStreamHandler(c, info, resp)
+		}
+		return openai.OpenaiImageHandler(c, info, resp)
 	case relayconstant.RelayModeResponsesCompact:
 		return openai.OaiResponsesCompactionHandler(c, resp)
 	case relayconstant.RelayModeResponses:
@@ -147,8 +158,18 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 		path = "/backend-api/codex/responses/compact"
 	case relayconstant.RelayModeAlphaSearch:
 		path = "/backend-api/codex/alpha/search"
+	case relayconstant.RelayModeImagesGenerations:
+		if strings.TrimSpace(info.UpstreamModelName) != codexImageModel {
+			return "", newCodexImageRequestError("codex channel: image endpoints only support %s, got %q", codexImageModel, info.UpstreamModelName)
+		}
+		path = "/backend-api/codex/images/generations"
+	case relayconstant.RelayModeImagesEdits:
+		if strings.TrimSpace(info.UpstreamModelName) != codexImageModel {
+			return "", newCodexImageRequestError("codex channel: image endpoints only support %s, got %q", codexImageModel, info.UpstreamModelName)
+		}
+		path = "/backend-api/codex/images/edits"
 	default:
-		return "", errors.New("codex channel: only /v1/responses, /v1/responses/compact and /v1/alpha/search are supported")
+		return "", errors.New("codex channel: endpoint not supported")
 	}
 	return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, path, info.ChannelType), nil
 }
@@ -179,11 +200,27 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("Authorization", "Bearer "+accessToken)
 	req.Set("chatgpt-account-id", accountID)
 
-	if req.Get("OpenAI-Beta") == "" {
-		req.Set("OpenAI-Beta", "responses=experimental")
-	}
-	if req.Get("originator") == "" {
-		req.Set("originator", "codex_cli_rs")
+	isImageRequest := info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits
+	if isImageRequest {
+		req.Del("OpenAI-Beta")
+		req.Set("User-Agent", codexUserAgent)
+		if req.Get("Session_id") == "" {
+			req.Set("Session_id", common.GetUUID())
+		}
+		if req.Get("originator") == "" {
+			req.Set("originator", codexImageOriginator)
+		}
+	} else {
+		if req.Get("OpenAI-Beta") == "" {
+			req.Set("OpenAI-Beta", "responses=experimental")
+		}
+		if req.Get("originator") == "" {
+			req.Set("originator", "codex_cli_rs")
+		}
+		if info.IsChannelTest && isCodexResponsesLiteModel(info.UpstreamModelName) {
+			req.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
+			req.Set("Version", "0.144.1")
+		}
 	}
 
 	// chatgpt.com/backend-api/codex/responses is strict about Content-Type.
@@ -192,7 +229,7 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("Content-Type", "application/json")
 	if info.IsStream {
 		req.Set("Accept", "text/event-stream")
-	} else if req.Get("Accept") == "" {
+	} else if isImageRequest || req.Get("Accept") == "" {
 		req.Set("Accept", "application/json")
 	}
 

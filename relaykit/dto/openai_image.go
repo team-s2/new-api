@@ -10,9 +10,14 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/types"
 )
 
-// MaxImageN caps the image generation count. Without this bound a huge or
-// wrapped-negative n overflows quota calculation into a negative charge.
-const MaxImageN = 128
+const (
+	// MaxImageN caps the image generation count. Without this bound a huge or
+	// wrapped-negative n overflows quota calculation into a negative charge.
+	MaxImageN = 128
+	// MaxPartialImages is the upstream limit for partial image events emitted
+	// before the final streamed image.
+	MaxPartialImages = 3
+)
 
 // ImageBillingParameters contains only the provider scalars parsed by request
 // validation. Keep this separate from the complete provider request payload.
