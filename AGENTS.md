@@ -1,3 +1,17 @@
+本仓库是上游 `QuantumNous/new-api` 的 fork。变更如下：
+
+- 支持 Codex channel 的 GPT 图像接口，包括 `gpt-image-2` 图像生成/编辑中继行为、校验、流式处理、计费防护和回归测试。
+- GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
+
+本仓库的例行维护流程：
+
+- 检查上游是否有更新的 release tag
+- 将本 fork rebase 到最新的上游 tag
+  - 保留本 fork 的增量变更
+  - 当上游实现了本 fork 的增量变更时，直接使用上游的实现
+- 运行相关的后端/前端测试或构建
+- 提交并 force push
+
 # AGENTS.md — Project Conventions for new-api
 
 DO NOT send optional commentary
