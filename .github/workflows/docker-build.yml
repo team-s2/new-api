@@ -1,152 +1,143 @@
-name: Publish Docker image (Multi-arch)
+name: Publish Docker image to GHCR
 
 on:
   push:
-    tags:
-      - '*'
-      - '!nightly*'
+    branches:
+      - '**'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag name to build (e.g., v0.10.8-alpha.3)'
-        required: true
-        type: string
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  build_single_arch:
-    name: Build & push (${{ matrix.arch }})
+  publish:
+    name: Build and push image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
-            platform: linux/amd64
             runner: ubuntu-latest
+            platform: linux/amd64
           - arch: arm64
-            platform: linux/arm64
             runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-
-    permissions:
-      packages: write
-      contents: read
-      id-token: write
+            platform: linux/arm64
 
     steps:
-      - name: Check out
+      - name: Check out source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && 0 || 1 }}
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'refs/heads/main' || github.sha }}
+          fetch-depth: 1
 
-      - name: Resolve tag & write VERSION
-        id: version
+      - name: Prepare build metadata
+        id: build
         run: |
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-            if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
-              echo "::error::Tag '$TAG' does not exist"
-              exit 1
-            fi
-          else
-            TAG=${GITHUB_REF#refs/tags/}
+          BASE_VERSION=$(tr -d '\r\n' < VERSION)
+          if [ -z "$BASE_VERSION" ]; then
+            echo "::error::VERSION must contain the upstream version"
+            exit 1
           fi
-          echo "TAG=${TAG}" >> $GITHUB_ENV
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
-          echo "${TAG}" > VERSION
-          echo "Building tag: ${TAG} for ${{ matrix.arch }}"
+
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          BUILD_VERSION="${BASE_VERSION}-${SHORT_SHA}"
+          echo "$BUILD_VERSION" > VERSION
+
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Log in to Docker Hub
+      - name: Log in to GHCR
         uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (labels)
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: calciumion/new-api
-
-      - name: Build & push
-        id: build
+      - name: Build and push image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
           tags: |
-            calciumion/new-api:${{ env.TAG }}-${{ matrix.arch }}
-            calciumion/new-api:latest-${{ matrix.arch }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ghcr.io/team-s2/new-api:${{ matrix.arch }}
+            ghcr.io/team-s2/new-api:${{ steps.build.outputs.short_sha }}-${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/team-s2/new-api
+            org.opencontainers.image.revision=${{ steps.build.outputs.revision }}
+            org.opencontainers.image.version=${{ steps.build.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
           provenance: mode=max
           sbom: true
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Publish summary
+        env:
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
+          VERSION: ${{ steps.build.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "Published \`$ARCH\` and \`$SHORT_SHA-$ARCH\` with VERSION \`$VERSION\` for \`$PLATFORM\`." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Sign image with cosign
-        run: cosign sign --yes calciumion/new-api@${{ steps.build.outputs.digest }}
-
-      - name: Image summary
-        run: |
-          echo "### Docker Image Digest (${{ matrix.arch }})" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "calciumion/new-api:${TAG}-${{ matrix.arch }}" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.build.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-  create_manifests:
-    name: Create multi-arch manifests
-    needs: [build_single_arch]
+  manifest:
+    name: Publish multi-platform manifest
+    needs: publish
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-
-    permissions:
-      id-token: write
 
     steps:
-      - name: Set version
-        run: echo "TAG=${{ needs.build_single_arch.outputs.tag }}" >> $GITHUB_ENV
+      - name: Check out source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'refs/heads/main' || github.sha }}
+          fetch-depth: 1
 
-      - name: Log in to Docker Hub
+      - name: Prepare build metadata
+        id: build
+        run: |
+          BASE_VERSION=$(tr -d '\r\n' < VERSION)
+          if [ -z "$BASE_VERSION" ]; then
+            echo "::error::VERSION must contain the upstream version"
+            exit 1
+          fi
+
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          BUILD_VERSION="${BASE_VERSION}-${SHORT_SHA}"
+
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$BUILD_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GHCR
         uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create & push manifest (version)
+      - name: Create multi-platform manifests
+        env:
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
         run: |
           docker buildx imagetools create \
-            -t calciumion/new-api:${TAG} \
-            calciumion/new-api:${TAG}-amd64 \
-            calciumion/new-api:${TAG}-arm64
+            --tag ghcr.io/team-s2/new-api:latest \
+            "ghcr.io/team-s2/new-api:${SHORT_SHA}-amd64" \
+            "ghcr.io/team-s2/new-api:${SHORT_SHA}-arm64"
 
-      - name: Create & push manifest (latest)
-        run: |
           docker buildx imagetools create \
-            -t calciumion/new-api:latest \
-            calciumion/new-api:latest-amd64 \
-            calciumion/new-api:latest-arm64
+            --tag "ghcr.io/team-s2/new-api:${SHORT_SHA}" \
+            "ghcr.io/team-s2/new-api:${SHORT_SHA}-amd64" \
+            "ghcr.io/team-s2/new-api:${SHORT_SHA}-arm64"
 
-      - name: Install cosign
-        uses: sigstore/cosign-installer@v3
-
-      - name: Sign manifests with cosign
-        run: |
-          cosign sign --yes calciumion/new-api:${TAG}
-          cosign sign --yes calciumion/new-api:latest
-
-      - name: Manifest summary
-        run: |
-          echo "### Multi-arch Manifest" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          docker buildx imagetools inspect calciumion/new-api:${TAG} >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+      - name: Publish summary
+        env:
+          SHORT_SHA: ${{ steps.build.outputs.short_sha }}
+          VERSION: ${{ steps.build.outputs.version }}
+        run: echo "Published multi-platform manifests \`latest\` and \`$SHORT_SHA\` with VERSION \`$VERSION\`." >> "$GITHUB_STEP_SUMMARY"
