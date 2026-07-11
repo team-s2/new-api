@@ -33,10 +33,6 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 	return nil, errors.New("codex channel: endpoint not supported")
 }
 
-func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
-	return nil, errors.New("codex channel: endpoint not supported")
-}
-
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
@@ -112,18 +108,22 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
-	if info.RelayMode != relayconstant.RelayModeResponses && info.RelayMode != relayconstant.RelayModeResponsesCompact {
+	switch info.RelayMode {
+	case relayconstant.RelayModeImagesGenerations, relayconstant.RelayModeImagesEdits:
+		if info.IsStream {
+			return openai.OpenaiImageStreamHandler(c, info, resp)
+		}
+		return openai.OpenaiImageHandler(c, info, resp)
+	case relayconstant.RelayModeResponsesCompact:
+		return openai.OaiResponsesCompactionHandler(c, resp)
+	case relayconstant.RelayModeResponses:
+		if info.IsStream {
+			return openai.OaiResponsesStreamHandler(c, info, resp)
+		}
+		return openai.OaiResponsesHandler(c, info, resp)
+	default:
 		return nil, types.NewError(errors.New("codex channel: endpoint not supported"), types.ErrorCodeInvalidRequest)
 	}
-
-	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
-		return openai.OaiResponsesCompactionHandler(c, resp)
-	}
-
-	if info.IsStream {
-		return openai.OaiResponsesStreamHandler(c, info, resp)
-	}
-	return openai.OaiResponsesHandler(c, info, resp)
 }
 
 func (a *Adaptor) GetModelList() []string {
@@ -135,12 +135,24 @@ func (a *Adaptor) GetChannelName() string {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
-	if info.RelayMode != relayconstant.RelayModeResponses && info.RelayMode != relayconstant.RelayModeResponsesCompact {
-		return "", errors.New("codex channel: only /v1/responses and /v1/responses/compact are supported")
-	}
-	path := "/backend-api/codex/responses"
-	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
+	var path string
+	switch info.RelayMode {
+	case relayconstant.RelayModeResponses:
+		path = "/backend-api/codex/responses"
+	case relayconstant.RelayModeResponsesCompact:
 		path = "/backend-api/codex/responses/compact"
+	case relayconstant.RelayModeImagesGenerations:
+		if strings.TrimSpace(info.UpstreamModelName) != codexImageModel {
+			return "", newCodexImageRequestError("codex channel: image endpoints only support %s, got %q", codexImageModel, info.UpstreamModelName)
+		}
+		path = "/backend-api/codex/images/generations"
+	case relayconstant.RelayModeImagesEdits:
+		if strings.TrimSpace(info.UpstreamModelName) != codexImageModel {
+			return "", newCodexImageRequestError("codex channel: image endpoints only support %s, got %q", codexImageModel, info.UpstreamModelName)
+		}
+		path = "/backend-api/codex/images/edits"
+	default:
+		return "", errors.New("codex channel: endpoint not supported")
 	}
 	return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, path, info.ChannelType), nil
 }
@@ -171,11 +183,23 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("Authorization", "Bearer "+accessToken)
 	req.Set("chatgpt-account-id", accountID)
 
-	if req.Get("OpenAI-Beta") == "" {
-		req.Set("OpenAI-Beta", "responses=experimental")
-	}
-	if req.Get("originator") == "" {
-		req.Set("originator", "codex_cli_rs")
+	isImageRequest := info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits
+	if isImageRequest {
+		req.Del("OpenAI-Beta")
+		req.Set("User-Agent", codexUserAgent)
+		if req.Get("Session_id") == "" {
+			req.Set("Session_id", common.GetUUID())
+		}
+		if req.Get("originator") == "" {
+			req.Set("originator", codexImageOriginator)
+		}
+	} else {
+		if req.Get("OpenAI-Beta") == "" {
+			req.Set("OpenAI-Beta", "responses=experimental")
+		}
+		if req.Get("originator") == "" {
+			req.Set("originator", "codex_cli_rs")
+		}
 	}
 
 	// chatgpt.com/backend-api/codex/responses is strict about Content-Type.
@@ -184,7 +208,7 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("Content-Type", "application/json")
 	if info.IsStream {
 		req.Set("Accept", "text/event-stream")
-	} else if req.Get("Accept") == "" {
+	} else if isImageRequest || req.Get("Accept") == "" {
 		req.Set("Accept", "application/json")
 	}
 

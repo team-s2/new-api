@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -157,6 +158,23 @@ func GetAndValidateResponsesCompactionRequest(c *gin.Context) (*dto.OpenAIRespon
 	return request, nil
 }
 
+func newImageRequestValidationError(err error) *types.NewAPIError {
+	return types.NewErrorWithStatusCode(
+		err,
+		types.ErrorCodeInvalidRequest,
+		http.StatusBadRequest,
+		types.ErrOptionWithSkipRetry(),
+	)
+}
+
+func parseAndValidatePartialImages(data []byte) (int, error) {
+	partialImages := 0
+	if common.GetJsonType(data) != "number" || common.Unmarshal(data, &partialImages) != nil || partialImages < 0 || partialImages > dto.MaxPartialImages {
+		return 0, newImageRequestValidationError(fmt.Errorf("partial_images must be an integer between 0 and %d", dto.MaxPartialImages))
+	}
+	return partialImages, nil
+}
+
 func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageRequest, error) {
 	imageRequest := &dto.ImageRequest{}
 
@@ -175,16 +193,26 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 			if nValue := strings.TrimSpace(formData.Get("n")); nValue != "" {
 				n, err := strconv.Atoi(nValue)
 				if err != nil || n < 0 || n > dto.MaxImageN {
-					return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
+					return nil, newImageRequestValidationError(fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN))
 				}
 				imageRequest.N = common.GetPointer(uint(n))
+			}
+			if partialImagesValue := strings.TrimSpace(formData.Get("partial_images")); partialImagesValue != "" {
+				partialImages, err := parseAndValidatePartialImages([]byte(partialImagesValue))
+				if err != nil {
+					return nil, err
+				}
+				imageRequest.PartialImages, err = common.Marshal(partialImages)
+				if err != nil {
+					return nil, fmt.Errorf("failed to encode partial_images: %w", err)
+				}
 			}
 			imageRequest.Quality = formData.Get("quality")
 			imageRequest.Size = formData.Get("size")
 			if streamValue := strings.TrimSpace(formData.Get("stream")); streamValue != "" {
 				stream, err := strconv.ParseBool(streamValue)
 				if err != nil {
-					return nil, fmt.Errorf("invalid stream value: %w", err)
+					return nil, newImageRequestValidationError(fmt.Errorf("invalid stream value: %w", err))
 				}
 				imageRequest.Stream = common.GetPointer(stream)
 			}
@@ -212,7 +240,7 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 	default:
 		err := common.UnmarshalBodyReusable(c, imageRequest)
 		if err != nil {
-			return nil, err
+			return nil, newImageRequestValidationError(err)
 		}
 
 		if imageRequest.Model == "" {
@@ -225,7 +253,12 @@ func GetAndValidOpenAIImageRequest(c *gin.Context, relayMode int) (*dto.ImageReq
 		}
 
 		if imageRequest.N != nil && *imageRequest.N > dto.MaxImageN {
-			return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
+			return nil, newImageRequestValidationError(fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN))
+		}
+		if len(imageRequest.PartialImages) > 0 {
+			if _, err := parseAndValidatePartialImages(imageRequest.PartialImages); err != nil {
+				return nil, err
+			}
 		}
 
 		// Not "256x256", "512x512", or "1024x1024"
