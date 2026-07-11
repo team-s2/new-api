@@ -172,6 +172,24 @@ function isCodexCredential(value: string | undefined): boolean {
   }
 }
 
+function isZhipuCodingPlanCredential(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    if (parsed === undefined) return true
+    return (
+      isJsonObjectValue(parsed) &&
+      typeof parsed.api_key === 'string' &&
+      parsed.api_key.trim().length > 0 &&
+      typeof parsed.account_username === 'string' &&
+      parsed.account_username.trim().length > 0 &&
+      typeof parsed.account_password === 'string' &&
+      parsed.account_password.trim().length > 0
+    )
+  } catch {
+    return false
+  }
+}
+
 function isVertexJsonKey(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -359,6 +377,19 @@ export const channelFormSchema = z
           'Codex credential must be a JSON object with access_token and account_id'
         )
       }
+    }
+
+    if (
+      data.type === 26 &&
+      data.base_url?.trim() === 'glm-coding-plan' &&
+      data.key?.trim().startsWith('{') &&
+      !isZhipuCodingPlanCredential(data.key)
+    ) {
+      addRequiredIssue(
+        ctx,
+        'key',
+        'Zhipu Coding Plan credential must include api_key, account_username, and account_password'
+      )
     }
 
     if (

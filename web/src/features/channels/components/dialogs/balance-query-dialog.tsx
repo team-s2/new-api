@@ -33,13 +33,19 @@ import { IconBadge } from '@/components/ui/icon-badge'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
-import { getCodexUsage, updateChannelBalance } from '../../api'
+import {
+  getCodexUsage,
+  getZhipuCodingPlanUsage,
+  type ZhipuCodingPlanUsageResponse,
+  updateChannelBalance,
+} from '../../api'
 import { channelsQueryKeys } from '../../lib'
 import { useChannels } from '../channels-provider'
 import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './codex-usage-dialog'
+import { ZhipuCodingPlanUsageDialog } from './zhipu-coding-plan-usage-dialog'
 
 type BalanceQueryDialogProps = {
   initialRawResponse?: string
@@ -61,8 +67,12 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
   )
   const [codexUsageResponse, setCodexUsageResponse] =
     useState<CodexUsageDialogData | null>(null)
+  const [zhipuUsageResponse, setZhipuUsageResponse] =
+    useState<ZhipuCodingPlanUsageResponse | null>(null)
 
   const isCodex = currentRow?.type === 57
+  const isZhipuCodingPlan =
+    currentRow?.type === 26 && currentRow.base_url === 'glm-coding-plan'
 
   const handleQueryCodexUsage = async () => {
     const row = currentRow
@@ -83,12 +93,37 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
     }
   }
 
+  const handleQueryZhipuUsage = async () => {
+    const row = currentRow
+    if (!row) return
+    setIsQuerying(true)
+    try {
+      const res = await getZhipuCodingPlanUsage(row.id)
+      if (!res.success) {
+        throw new Error(res.message || t('Failed to fetch usage'))
+      }
+      setZhipuUsageResponse(res)
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error ? error.message : t('Failed to fetch usage')
+      )
+    } finally {
+      setIsQuerying(false)
+    }
+  }
+
   useEffect(() => {
     if (!isCodex) return
     if (!props.open) return
     handleQueryCodexUsage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open, isCodex])
+
+  useEffect(() => {
+    if (!isZhipuCodingPlan || !open) return
+    handleQueryZhipuUsage()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isZhipuCodingPlan])
 
   if (!currentRow) return null
 
@@ -135,6 +170,7 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
     setBalanceUpdatedTime(null)
     setRawResponse(null)
     setCodexUsageResponse(null)
+    setZhipuUsageResponse(null)
     props.onOpenChange(false)
   }
 
@@ -161,6 +197,21 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
         channelId={currentRow.id}
         response={codexUsageResponse}
         onRefresh={handleQueryCodexUsage}
+        isRefreshing={isQuerying}
+      />
+    )
+  }
+
+  if (isZhipuCodingPlan) {
+    return (
+      <ZhipuCodingPlanUsageDialog
+        open={props.open}
+        onOpenChange={(value) => {
+          if (!value) handleClose()
+        }}
+        channelName={currentRow.name}
+        response={zhipuUsageResponse}
+        onRefresh={handleQueryZhipuUsage}
         isRefreshing={isQuerying}
       />
     )
