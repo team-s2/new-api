@@ -59,6 +59,29 @@ export type CodexResetCreditsResponse = CodexUsageResponse
 
 export type CodexUsageResetResponse = CodexUsageResponse
 
+export type ZhipuCodingPlanUsageLimit = {
+  usage?: number
+  current_value?: number
+  remaining?: number
+  percentage: number
+  next_reset_time?: number
+  usage_details?: Array<{
+    model_code: string
+    usage: number
+  }>
+}
+
+export type ZhipuCodingPlanUsageResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    level?: string
+    five_hour?: ZhipuCodingPlanUsageLimit
+    weekly?: ZhipuCodingPlanUsageLimit
+    mcp_monthly?: ZhipuCodingPlanUsageLimit
+  }
+}
+
 export type CodexCredentialRefreshResponse = {
   success: boolean
   message?: string
@@ -347,6 +370,16 @@ export async function resetCodexUsage(
   const res = await api.post(
     `/api/channel/${channelId}/codex/usage/reset`,
     {},
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export async function getZhipuCodingPlanUsage(
+  channelId: number
+): Promise<ZhipuCodingPlanUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/zhipu/coding-plan/usage`,
     channelActionConfig({ disableDuplicate: true })
   )
   return res.data

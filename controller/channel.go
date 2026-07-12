@@ -17,6 +17,7 @@ import (
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/gemini"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
+	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 
@@ -516,6 +517,19 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 			}
 			if v, ok := keyMap["account_id"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
 				return fmt.Errorf("Codex key JSON must include account_id")
+			}
+		}
+	}
+
+	if channel.Type == constant.ChannelTypeZhipu_v4 && strings.TrimSpace(channel.GetBaseURL()) == "glm-coding-plan" {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if strings.HasPrefix(trimmedKey, "{") {
+			credential, err := zhipu_4v.ParseCodingPlanCredential(trimmedKey)
+			if err != nil {
+				return err
+			}
+			if credential.AccountUsername == "" || credential.AccountPassword == "" {
+				return fmt.Errorf("Zhipu Coding Plan credential JSON must include account_username and account_password")
 			}
 		}
 	}

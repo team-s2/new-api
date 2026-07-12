@@ -46,16 +46,20 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toIntlLocale } from '@/i18n/languages'
 import {
   formatCurrencyFromUSD,
   formatQuotaWithCurrency,
   getCurrencyLabel,
 } from '@/lib/currency'
-import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampToDate } from '@/lib/format'
 import { truncateText } from '@/lib/utils'
 
-import { getCodexUsage } from '../api'
+import {
+  getCodexUsage,
+  getZhipuCodingPlanUsage,
+  type ZhipuCodingPlanUsageResponse,
+} from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
   formatRelativeTime,
@@ -84,6 +88,7 @@ import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
+import { ZhipuCodingPlanUsageDialog } from './dialogs/zhipu-coding-plan-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
@@ -306,6 +311,12 @@ function BalanceCell({ channel }: { channel: Channel }) {
   const [codexUsageOpen, setCodexUsageOpen] = useState(false)
   const [codexUsageResponse, setCodexUsageResponse] =
     useState<CodexUsageDialogData | null>(null)
+  const [zhipuUsageOpen, setZhipuUsageOpen] = useState(false)
+  const [zhipuUsageResponse, setZhipuUsageResponse] =
+    useState<ZhipuCodingPlanUsageResponse | null>(null)
+  const isZhipuCodingPlan =
+    channel.type === 26 && channel.base_url === 'glm-coding-plan'
+  const isAccountInfoChannel = channel.type === 57 || isZhipuCodingPlan
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -411,13 +422,31 @@ function BalanceCell({ channel }: { channel: Channel }) {
       return
     }
 
+    if (isZhipuCodingPlan) {
+      try {
+        const res = await getZhipuCodingPlanUsage(channel.id)
+        if (!res.success) {
+          throw new Error(res.message || t('Failed to fetch usage'))
+        }
+        setZhipuUsageResponse(res)
+        setZhipuUsageOpen(true)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t('Failed to fetch usage')
+        )
+      } finally {
+        setIsUpdating(false)
+      }
+      return
+    }
+
     await handleUpdateChannelBalance(channel.id, queryClient)
     setIsUpdating(false)
   }
   let remainingBadgeLabel = sensitiveVisible ? remainingDisplay : SENSITIVE_MASK
   if (sensitiveVisible && isUpdating) {
     remainingBadgeLabel = t('Updating...')
-  } else if (sensitiveVisible && channel.type === 57) {
+  } else if (sensitiveVisible && isAccountInfoChannel) {
     remainingBadgeLabel = t('Account Info')
   }
   let remainingTooltipLabel = remainingLabel
@@ -425,9 +454,11 @@ function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = maskedRemainingLabel
   } else if (channel.type === 57) {
     remainingTooltipLabel = t('Click to view Codex usage')
+  } else if (isZhipuCodingPlan) {
+    remainingTooltipLabel = t('Click to view Zhipu Coding Plan usage')
   }
   let remainingBadgeVariant: StatusBadgeProps['variant'] = variant
-  if (channel.type === 57) {
+  if (isAccountInfoChannel) {
     remainingBadgeVariant = 'info'
   } else if (isUpdating) {
     remainingBadgeVariant = 'neutral'
@@ -469,7 +500,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
           />
           <TooltipContent>
             <p>{remainingTooltipLabel}</p>
-            {channel.type !== 57 && <p>{t('Click to update balance')}</p>}
+            {!isAccountInfoChannel && <p>{t('Click to update balance')}</p>}
           </TooltipContent>
         </Tooltip>
       </div>
@@ -493,6 +524,32 @@ function BalanceCell({ channel }: { channel: Channel }) {
               throw new Error(res.message || t('Failed to fetch usage'))
             }
             setCodexUsageResponse(res)
+          } catch (error) {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : t('Failed to fetch usage')
+            )
+          } finally {
+            setIsUpdating(false)
+          }
+        }}
+        isRefreshing={isUpdating}
+      />
+      <ZhipuCodingPlanUsageDialog
+        open={zhipuUsageOpen}
+        onOpenChange={setZhipuUsageOpen}
+        channelName={sensitiveVisible ? channel.name : SENSITIVE_MASK}
+        response={zhipuUsageResponse}
+        onRefresh={async () => {
+          if (isUpdating) return
+          setIsUpdating(true)
+          try {
+            const res = await getZhipuCodingPlanUsage(channel.id)
+            if (!res.success) {
+              throw new Error(res.message || t('Failed to fetch usage'))
+            }
+            setZhipuUsageResponse(res)
           } catch (error) {
             toast.error(
               error instanceof Error

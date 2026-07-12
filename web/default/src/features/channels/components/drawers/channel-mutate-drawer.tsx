@@ -2896,6 +2896,13 @@ export function ChannelMutateDrawer({
                                       'Leave empty to keep existing key'
                                     )
                                   } else if (
+                                    currentType === 26 &&
+                                    currentBaseUrl === 'glm-coding-plan'
+                                  ) {
+                                    keyPlaceholder = t(
+                                      'Enter Zhipu Coding Plan credential JSON'
+                                    )
+                                  } else if (
                                     currentType === 33 &&
                                     awsKeyType === 'api_key' &&
                                     isBatchMode
@@ -2926,7 +2933,6 @@ export function ChannelMutateDrawer({
                                       'Enter one key per line for batch creation'
                                     )
                                   }
-
                                   let keyDescription: ReactNode = t(
                                     FIELD_DESCRIPTIONS.KEY
                                   )
@@ -2950,6 +2956,13 @@ export function ChannelMutateDrawer({
                                           </span>
                                         )}
                                       </>
+                                    )
+                                  } else if (
+                                    currentType === 26 &&
+                                    currentBaseUrl === 'glm-coding-plan'
+                                  ) {
+                                    keyDescription = t(
+                                      'Use a JSON object with api_key, account_username, and account_password to enable Account Info. A plain API key remains supported for relay only.'
                                     )
                                   } else if (isBatchMode) {
                                     keyDescription = t(
