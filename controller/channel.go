@@ -195,6 +195,11 @@ func GetAllChannels(c *gin.Context) {
 }
 
 func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, error) {
+	key, err := normalizeFetchModelsKey(channel.Type, channel.GetBaseURL(), key)
+	if err != nil {
+		return nil, err
+	}
+
 	var headers http.Header
 	switch channel.Type {
 	case constant.ChannelTypeAnthropic:
@@ -219,6 +224,22 @@ func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, e
 	}
 
 	return headers, nil
+}
+
+func normalizeFetchModelsKey(channelType int, baseURL string, key string) (string, error) {
+	key = strings.TrimSpace(key)
+	if channelType != constant.ChannelTypeZhipu_v4 {
+		return key, nil
+	}
+	if _, ok := constant.ChannelSpecialBases[baseURL]; !ok {
+		return key, nil
+	}
+
+	credential, err := zhipu_4v.ParseCodingPlanCredential(key)
+	if err != nil {
+		return "", err
+	}
+	return credential.APIKey, nil
 }
 
 func FetchUpstreamModels(c *gin.Context) {
@@ -1190,8 +1211,18 @@ func FetchModels(c *gin.Context) {
 		baseURL = constant.ChannelBaseURLs[req.Type]
 	}
 
-	// remove line breaks and extra spaces.
+	// Remove extra spaces and select the first key for batch input. Coding Plan
+	// credentials must be parsed before splitting because their JSON may span
+	// multiple lines.
 	key := strings.TrimSpace(req.Key)
+	key, err := normalizeFetchModelsKey(req.Type, baseURL, key)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"message": err.Error(),
+		})
+		return
+	}
 	key = strings.Split(key, "\n")[0]
 
 	if req.Type == constant.ChannelTypeOllama {
@@ -1234,7 +1265,7 @@ func FetchModels(c *gin.Context) {
 	}
 
 	client := &http.Client{}
-	url := fmt.Sprintf("%s/v1/models", baseURL)
+	url := getUpstreamModelsURL(req.Type, baseURL)
 
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {

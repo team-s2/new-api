@@ -5,11 +5,65 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGetUpstreamModelsURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType int
+		baseURL     string
+		expected    string
+	}{
+		{
+			name:        "Zhipu Coding Plan alias",
+			channelType: constant.ChannelTypeZhipu_v4,
+			baseURL:     "glm-coding-plan",
+			expected:    "https://open.bigmodel.cn/api/coding/paas/v4/models",
+		},
+		{
+			name:        "standard Zhipu endpoint",
+			channelType: constant.ChannelTypeZhipu_v4,
+			baseURL:     "https://open.bigmodel.cn/",
+			expected:    "https://open.bigmodel.cn/api/paas/v4/models",
+		},
+		{
+			name:        "generic OpenAI-compatible endpoint",
+			channelType: constant.ChannelTypeOpenAI,
+			baseURL:     "https://example.com/",
+			expected:    "https://example.com/v1/models",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, getUpstreamModelsURL(test.channelType, test.baseURL))
+		})
+	}
+}
+
+func TestBuildFetchModelsHeadersUsesOnlyZhipuCodingPlanAPIKey(t *testing.T) {
+	baseURL := "glm-coding-plan"
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeZhipu_v4,
+		BaseURL: &baseURL,
+	}
+	credential := `{
+		"api_key": "coding-key",
+		"account_username": "user",
+		"account_password": "password"
+	}`
+
+	headers, err := buildFetchModelsHeaders(channel, credential)
+
+	require.NoError(t, err)
+	require.Equal(t, "Bearer coding-key", headers.Get("Authorization"))
+	require.NotContains(t, headers.Get("Authorization"), "password")
+}
 
 func TestNormalizeModelNames(t *testing.T) {
 	result := normalizeModelNames([]string{
