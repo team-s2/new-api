@@ -1,6 +1,8 @@
 package codex
 
 import (
+	"strings"
+
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
 )
@@ -29,4 +31,14 @@ func withCompactModelSuffix(models []string) []string {
 		return ratio_setting.WithCompactModelSuffix(model)
 	})...)
 	return lo.Uniq(out)
+}
+
+func isCodexResponsesLiteModel(modelName string) bool {
+	modelName = strings.TrimSuffix(strings.TrimSpace(modelName), ratio_setting.CompactModelSuffix)
+	switch modelName {
+	case "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna":
+		return true
+	default:
+		return false
+	}
 }

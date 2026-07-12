@@ -50,6 +50,16 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
 	isCompact := info != nil && info.RelayMode == relayconstant.RelayModeResponsesCompact
+	if info != nil && info.IsChannelTest && isCodexResponsesLiteModel(info.UpstreamModelName) {
+		request.ParallelToolCalls = json.RawMessage("false")
+		if request.Reasoning == nil {
+			request.Reasoning = &dto.Reasoning{}
+		} else {
+			reasoning := *request.Reasoning
+			request.Reasoning = &reasoning
+		}
+		request.Reasoning.Context = json.RawMessage(`"all_turns"`)
+	}
 
 	if info != nil && info.ChannelSetting.SystemPrompt != "" {
 		systemPrompt := info.ChannelSetting.SystemPrompt
@@ -199,6 +209,10 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 		}
 		if req.Get("originator") == "" {
 			req.Set("originator", "codex_cli_rs")
+		}
+		if info.IsChannelTest && isCodexResponsesLiteModel(info.UpstreamModelName) {
+			req.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
+			req.Set("Version", "0.144.1")
 		}
 	}
 
