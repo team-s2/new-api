@@ -1,5 +1,9 @@
 package codex
 
+import (
+	"strings"
+)
+
 var ModelList = []string{
 	"gpt-5.6-sol",
 	"gpt-5.6-terra",
@@ -19,3 +23,12 @@ const (
 	codexImageOriginator = "codex-tui"
 	codexUserAgent       = "codex-tui/0.135.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.135.0)"
 )
+
+func isCodexResponsesLiteModel(modelName string) bool {
+	switch strings.TrimSpace(modelName) {
+	case "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna":
+		return true
+	default:
+		return false
+	}
+}
