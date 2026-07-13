@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	apptelemetry "github.com/QuantumNous/new-api/pkg/telemetry"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/relay/channel/task/taskcommon"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -33,6 +34,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func relayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
@@ -71,6 +76,14 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 }
 
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
+	tracer := otel.Tracer(apptelemetry.InstrumentationName)
+	relayCtx, relaySpan := tracer.Start(c.Request.Context(), "llm.relay",
+		trace.WithAttributes(
+			attribute.String("gen_ai.operation.name", string(relayFormat)),
+			attribute.String("new_api.relay.format", string(relayFormat)),
+		),
+	)
+	c.Request = c.Request.WithContext(relayCtx)
 
 	requestId := c.GetString(common.RequestIdKey)
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
@@ -78,8 +91,23 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	var (
 		newAPIError *types.NewAPIError
+		relayInfo   *relaycommon.RelayInfo
 		ws          *websocket.Conn
 	)
+	defer func() {
+		if relayInfo != nil {
+			relaySpan.SetAttributes(
+				attribute.String("gen_ai.request.model", relayInfo.OriginModelName),
+				attribute.Int("new_api.relay.retry_count", relayInfo.RetryIndex),
+				attribute.Bool("new_api.relay.stream", relayInfo.IsStream),
+			)
+		}
+		if newAPIError != nil {
+			relaySpan.RecordError(newAPIError)
+			relaySpan.SetStatus(codes.Error, string(newAPIError.GetErrorCode()))
+		}
+		relaySpan.End()
+	}()
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		var err error
@@ -114,7 +142,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}()
 
+	_, validationSpan := tracer.Start(relayCtx, "llm.request.validate")
 	request, err := helper.GetAndValidateRequest(c, relayFormat)
+	if err != nil {
+		validationSpan.RecordError(err)
+		validationSpan.SetStatus(codes.Error, "request validation failed")
+	}
+	validationSpan.End()
 	if err != nil {
 		// Map "request body too large" to 413 so clients can handle it correctly
 		if common.IsRequestBodyTooLargeError(err) || errors.Is(err, common.ErrRequestBodyTooLarge) {
@@ -125,7 +159,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	relayInfo, err := relaycommon.GenRelayInfo(c, relayFormat, request, ws)
+	relayInfo, err = relaycommon.GenRelayInfo(c, relayFormat, request, ws)
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
@@ -150,7 +184,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}
 
+	_, tokenSpan := tracer.Start(relayCtx, "llm.token.estimate")
 	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
+	if err != nil {
+		tokenSpan.RecordError(err)
+		tokenSpan.SetStatus(codes.Error, "token estimation failed")
+	} else {
+		tokenSpan.SetAttributes(attribute.Int("gen_ai.usage.input_tokens", tokens))
+	}
+	tokenSpan.End()
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeCountTokenFailed)
 		return
@@ -158,7 +200,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	relayInfo.SetEstimatePromptTokens(tokens)
 
+	_, pricingSpan := tracer.Start(relayCtx, "llm.billing.estimate")
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
+	if err != nil {
+		pricingSpan.RecordError(err)
+		pricingSpan.SetStatus(codes.Error, "billing estimation failed")
+	} else {
+		pricingSpan.SetAttributes(attribute.Int("new_api.billing.preconsume_quota", priceData.QuotaToPreConsume))
+	}
+	pricingSpan.End()
 	if err != nil {
 		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		return
@@ -169,7 +219,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 	} else {
+		_, billingSpan := tracer.Start(relayCtx, "llm.billing.preconsume")
 		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
+		if newAPIError != nil {
+			billingSpan.RecordError(newAPIError)
+			billingSpan.SetStatus(codes.Error, "pre-consume failed")
+		}
+		billingSpan.End()
 		if newAPIError != nil {
 			return
 		}
@@ -198,12 +254,24 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.RetryIndex = retryParam.GetRetry()
+		_, channelSpan := tracer.Start(relayCtx, "llm.channel.select",
+			trace.WithAttributes(attribute.Int("new_api.relay.attempt", relayInfo.RetryIndex)),
+		)
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
+			channelSpan.RecordError(channelErr)
+			channelSpan.SetStatus(codes.Error, "channel selection failed")
+			channelSpan.End()
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
 			break
 		}
+		channelSpan.SetAttributes(
+			attribute.Int("new_api.channel.id", channel.Id),
+			attribute.Int("new_api.channel.type", channel.Type),
+		)
+		channelSpan.End()
+
 		addUsedChannel(c, channel.Id)
 		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
 			newAPIError = billingErr
@@ -222,6 +290,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 		c.Request.Body = io.NopCloser(bodyStorage)
 
+		attemptCtx, attemptSpan := tracer.Start(relayCtx, "llm.relay.attempt",
+			trace.WithAttributes(
+				attribute.Int("new_api.relay.attempt", relayInfo.RetryIndex),
+				attribute.Int("new_api.channel.id", channel.Id),
+				attribute.Int("new_api.channel.type", channel.Type),
+			),
+		)
+		c.Request = c.Request.WithContext(attemptCtx)
+		relayInfo.SetTraceContext(attemptCtx)
+
 		switch relayFormat {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)
@@ -232,11 +310,17 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		default:
 			newAPIError = relayHandler(c, relayInfo)
 		}
+		c.Request = c.Request.WithContext(relayCtx)
 
 		if newAPIError == nil {
+			attemptSpan.SetStatus(codes.Ok, "")
+			attemptSpan.End()
 			relayInfo.LastError = nil
 			return
 		}
+		attemptSpan.RecordError(newAPIError)
+		attemptSpan.SetStatus(codes.Error, string(newAPIError.GetErrorCode()))
+		attemptSpan.End()
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError

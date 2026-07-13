@@ -23,6 +23,8 @@ import (
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ApplyUpstreamBodyMetadata restores metadata that net/http cannot infer from
@@ -529,6 +531,11 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	// Inherit the relay attempt span and inject its W3C trace context into the
+	// upstream provider request through the instrumented HTTP transport.
+	req = req.WithContext(c.Request.Context())
+	attemptSpan := trace.SpanFromContext(req.Context())
+	attemptSpan.AddEvent("llm.upstream.request.start")
 	resp, err := relayClient.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
@@ -548,6 +555,9 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 			resp.Proto,
 		))
 	}
+	attemptSpan.AddEvent("llm.upstream.response.headers",
+		trace.WithAttributes(attribute.Int("http.response.status_code", resp.StatusCode)),
+	)
 
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)

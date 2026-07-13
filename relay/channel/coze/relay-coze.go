@@ -227,7 +227,7 @@ func checkIfChatComplete(a *Adaptor, c *gin.Context, info *relaycommon.RelayInfo
 		return err, false
 	}
 
-	resp, err := doRequest(req, info) // 调用 doRequest
+	resp, err := doRequest(c, req, info) // 调用 doRequest
 	if err != nil {
 		return err, false
 	}
@@ -271,19 +271,19 @@ func getChatDetail(a *Adaptor, c *gin.Context, info *relaycommon.RelayInfo) (*ht
 	if err != nil {
 		return nil, fmt.Errorf("setup request header failed: %w", err)
 	}
-	resp, err := doRequest(req, info)
+	resp, err := doRequest(c, req, info)
 	if err != nil {
 		return nil, fmt.Errorf("do request failed: %w", err)
 	}
 	return resp, nil
 }
 
-func doRequest(req *http.Request, info *relaycommon.RelayInfo) (*http.Response, error) {
+func doRequest(c *gin.Context, req *http.Request, info *relaycommon.RelayInfo) (*http.Response, error) {
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
 	}
-	resp, err := client.Do(req)
+	resp, err := client.Do(req.WithContext(c.Request.Context()))
 	if err != nil { // 增加对 client.Do(req) 返回错误的检查
 		return nil, fmt.Errorf("client.Do failed: %w", err)
 	}

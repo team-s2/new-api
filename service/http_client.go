@@ -17,6 +17,8 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/proxy"
 )
 
@@ -39,6 +41,35 @@ type proxyHTTPClientCache struct {
 type proxyURLConfig struct {
 	parsedURL *url.URL
 	cacheKey  string
+}
+
+type tracedRoundTripper struct {
+	base         http.RoundTripper
+	instrumented http.RoundTripper
+}
+
+func newTracedRoundTripper(base http.RoundTripper) http.RoundTripper {
+	return &tracedRoundTripper{
+		base: base,
+		instrumented: otelhttp.NewTransport(base,
+			otelhttp.WithFilter(func(request *http.Request) bool {
+				return trace.SpanContextFromContext(request.Context()).IsValid()
+			}),
+			otelhttp.WithSpanNameFormatter(func(_ string, request *http.Request) string {
+				return "llm.upstream " + request.Method
+			}),
+		),
+	}
+}
+
+func (t *tracedRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return t.instrumented.RoundTrip(request)
+}
+
+func (t *tracedRoundTripper) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
@@ -123,7 +154,7 @@ func newRelayHTTPTransport() *http.Transport {
 
 func newRelayHTTPClient(transport http.RoundTripper) *http.Client {
 	client := &http.Client{
-		Transport:     transport,
+		Transport:     newTracedRoundTripper(transport),
 		CheckRedirect: checkRedirect,
 	}
 	if common.RelayTimeout != 0 {
