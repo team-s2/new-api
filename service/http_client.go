@@ -12,6 +12,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/net/proxy"
 )
 
@@ -21,6 +23,35 @@ var (
 	proxyClientLock         sync.Mutex
 	proxyClients            = make(map[string]*http.Client)
 )
+
+type tracedRoundTripper struct {
+	base         http.RoundTripper
+	instrumented http.RoundTripper
+}
+
+func newTracedRoundTripper(base http.RoundTripper) http.RoundTripper {
+	return &tracedRoundTripper{
+		base: base,
+		instrumented: otelhttp.NewTransport(base,
+			otelhttp.WithFilter(func(request *http.Request) bool {
+				return trace.SpanContextFromContext(request.Context()).IsValid()
+			}),
+			otelhttp.WithSpanNameFormatter(func(_ string, request *http.Request) string {
+				return "llm.upstream " + request.Method
+			}),
+		),
+	}
+}
+
+func (t *tracedRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return t.instrumented.RoundTrip(request)
+}
+
+func (t *tracedRoundTripper) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
 
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	urlStr := req.URL.String()
@@ -67,12 +98,12 @@ func InitHttpClient() {
 
 	if common.RelayTimeout == 0 {
 		httpClient = &http.Client{
-			Transport:     transport,
+			Transport:     newTracedRoundTripper(transport),
 			CheckRedirect: checkRedirect,
 		}
 	} else {
 		httpClient = &http.Client{
-			Transport:     transport,
+			Transport:     newTracedRoundTripper(transport),
 			Timeout:       time.Duration(common.RelayTimeout) * time.Second,
 			CheckRedirect: checkRedirect,
 		}
@@ -113,7 +144,7 @@ func ResetProxyClientCache() {
 	proxyClientLock.Lock()
 	defer proxyClientLock.Unlock()
 	for _, client := range proxyClients {
-		if transport, ok := client.Transport.(*http.Transport); ok && transport != nil {
+		if transport, ok := client.Transport.(interface{ CloseIdleConnections() }); ok && transport != nil {
 			transport.CloseIdleConnections()
 		}
 	}
@@ -154,7 +185,7 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 			transport.TLSClientConfig = common.InsecureTLSConfig
 		}
 		client := &http.Client{
-			Transport:     transport,
+			Transport:     newTracedRoundTripper(transport),
 			CheckRedirect: checkRedirect,
 		}
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
@@ -196,7 +227,7 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 			transport.TLSClientConfig = common.InsecureTLSConfig
 		}
 
-		client := &http.Client{Transport: transport, CheckRedirect: checkRedirect}
+		client := &http.Client{Transport: newTracedRoundTripper(transport), CheckRedirect: checkRedirect}
 		client.Timeout = time.Duration(common.RelayTimeout) * time.Second
 		proxyClientLock.Lock()
 		proxyClients[proxyURL] = client

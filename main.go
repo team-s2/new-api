@@ -24,6 +24,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	apptelemetry "github.com/QuantumNous/new-api/pkg/telemetry"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
@@ -60,6 +61,13 @@ func main() {
 		common.FatalLog("failed to initialize resources: " + err.Error())
 		return
 	}
+	defer func() {
+		ctx, cancel := apptelemetry.ShutdownTimeout()
+		defer cancel()
+		if err := shutdownTelemetry(ctx); err != nil {
+			common.SysError("failed to shut down OpenTelemetry: " + err.Error())
+		}
+	}()
 
 	common.SysLog("New API " + common.Version + " started")
 	if os.Getenv("GIN_MODE") != "debug" {
@@ -185,6 +193,7 @@ func main() {
 	// This will cause SSE not to work!!!
 	//server.Use(gzip.Gzip(gzip.DefaultCompression))
 	server.Use(middleware.RequestId())
+	server.Use(middleware.OpenTelemetry())
 	server.Use(middleware.Version())
 	server.Use(middleware.I18n())
 	middleware.SetUpLogger(server)
@@ -308,6 +317,12 @@ func InitResources() error {
 
 	logger.SetupLogger()
 
+	shutdown, err := apptelemetry.Init(context.Background())
+	if err != nil {
+		return err
+	}
+	shutdownTelemetry = shutdown
+
 	// Initialize model settings
 	ratio_setting.InitRatioSettings()
 
@@ -371,3 +386,5 @@ func InitResources() error {
 
 	return nil
 }
+
+var shutdownTelemetry = func(context.Context) error { return nil }

@@ -1,6 +1,7 @@
 package common
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/tidwall/gjson"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ThinkingContentInfo struct {
@@ -96,6 +99,7 @@ type RelayInfo struct {
 	StartTime         time.Time
 	FirstResponseTime time.Time
 	isFirstResponse   bool
+	traceContext      context.Context
 	//SendLastReasoningResponse bool
 	IsStream               bool
 	IsGeminiBatchEmbedding bool
@@ -665,7 +669,17 @@ func (info *RelayInfo) SetFirstResponseTime() {
 	if info.isFirstResponse {
 		info.FirstResponseTime = time.Now()
 		info.isFirstResponse = false
+		if info.traceContext != nil {
+			trace.SpanFromContext(info.traceContext).AddEvent("llm.response.first_chunk",
+				trace.WithTimestamp(info.FirstResponseTime),
+				trace.WithAttributes(attribute.Int64("llm.response.time_to_first_chunk_ms", info.FirstResponseTime.Sub(info.StartTime).Milliseconds())),
+			)
+		}
 	}
+}
+
+func (info *RelayInfo) SetTraceContext(ctx context.Context) {
+	info.traceContext = ctx
 }
 
 func (info *RelayInfo) HasSendResponse() bool {
