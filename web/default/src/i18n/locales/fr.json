@@ -1997,6 +1997,8 @@
     "Find the ratio.": "Trouver le taux.",
     "Finish Time": "Heure de fin",
     "First API request": "Première requête API",
+    "First response timeout (seconds)": "Délai d'attente de la première réponse (secondes)",
+    "For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.": "Pour les requêtes en streaming, annulez et réessayez si aucune donnée amont significative n'arrive dans ce délai. Définissez 0 pour désactiver. Les nouvelles tentatives peuvent entraîner une double facturation en amont.",
     "First token": "1er token",
     "First/Last Frame to Video": "Première/Dernière image vers vidéo",
     "Fix Abilities": "Réparer la cohérence des canaux",

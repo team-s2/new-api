@@ -1997,6 +1997,8 @@
     "Find the ratio.": "Find the ratio.",
     "Finish Time": "Finish Time",
     "First API request": "First API request",
+    "First response timeout (seconds)": "First response timeout (seconds)",
+    "For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.": "For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.",
     "First token": "First token",
     "First/Last Frame to Video": "First/Last Frame to Video",
     "Fix Abilities": "Repair Channel Consistency",

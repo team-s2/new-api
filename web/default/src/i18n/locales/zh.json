@@ -1997,6 +1997,8 @@
     "Find the ratio.": "确定倍率。",
     "Finish Time": "完成时间",
     "First API request": "首个 API 请求",
+    "First response timeout (seconds)": "首包超时（秒）",
+    "For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.": "对流式请求，若在指定秒数内未收到上游有效数据，则取消本次请求并重试。设为 0 表示关闭。重试可能导致上游重复计费。",
     "First token": "首字",
     "First/Last Frame to Video": "首尾生视频",
     "Fix Abilities": "修复渠道一致性",

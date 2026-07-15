@@ -427,6 +427,11 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
 	}
+	// This is a local latency-SLA failure, not an upstream 504 response. Keep
+	// it retryable even when ordinary 504 responses are configured to skip.
+	if openaiErr.GetErrorCode() == types.ErrorCodeUpstreamFirstResponseTimeout {
+		return true
+	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
 		return false
@@ -470,6 +475,9 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other["channel_type"] = c.GetInt("channel_type")
 		adminInfo := make(map[string]interface{})
 		adminInfo["use_channel"] = c.GetStringSlice("use_channel")
+		if attempts, ok := c.Get("first_response_timeout_attempts"); ok {
+			adminInfo["first_response_timeout_attempts"] = attempts
+		}
 		isMultiKey := common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey)
 		if isMultiKey {
 			adminInfo["is_multi_key"] = true

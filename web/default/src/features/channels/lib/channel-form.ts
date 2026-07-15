@@ -206,6 +206,7 @@ export const channelFormSchema = z
     force_format: z.boolean().optional(),
     thinking_to_content: z.boolean().optional(),
     proxy: z.string().optional(),
+    first_response_timeout_seconds: z.number().int().min(0).optional(),
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
@@ -359,6 +360,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   force_format: false,
   thinking_to_content: false,
   proxy: '',
+  first_response_timeout_seconds: 0,
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
@@ -397,6 +399,7 @@ export function transformChannelToFormDefaults(
     force_format: false,
     thinking_to_content: false,
     proxy: '',
+    first_response_timeout_seconds: 0,
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
@@ -409,6 +412,10 @@ export function transformChannelToFormDefaults(
         force_format: parsed.force_format || false,
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
+        first_response_timeout_seconds: Math.max(
+          0,
+          Math.trunc(Number(parsed.first_response_timeout_seconds) || 0)
+        ),
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
@@ -526,6 +533,8 @@ function buildSettingJSON(formData: ChannelFormValues): string {
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
     proxy: formData.proxy || '',
+    first_response_timeout_seconds:
+      formData.first_response_timeout_seconds || 0,
     pass_through_body_enabled: formData.pass_through_body_enabled || false,
     system_prompt: formData.system_prompt || '',
     system_prompt_override: formData.system_prompt_override || false,

@@ -1997,6 +1997,8 @@
     "Find the ratio.": "Определите коэффициент.",
     "Finish Time": "Время завершения",
     "First API request": "Первый API-запрос",
+    "First response timeout (seconds)": "Тайм-аут первого ответа (секунды)",
+    "For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.": "Для потоковых запросов отменить и повторить запрос, если за указанное время не поступили значимые данные от вышестоящего сервера. 0 отключает функцию. Повторные попытки могут привести к двойному списанию у провайдера.",
     "First token": "Первый токен",
     "First/Last Frame to Video": "Первый/последний кадр в видео",
     "Fix Abilities": "Восстановить согласованность каналов",

@@ -962,6 +962,9 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
+	if channelParams.FirstResponseTimeoutSeconds < 0 {
+		return fmt.Errorf("first_response_timeout_seconds must be greater than or equal to 0")
+	}
 	return nil
 }
 

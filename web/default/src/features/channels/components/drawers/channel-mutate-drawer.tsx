@@ -283,6 +283,7 @@ const SENSITIVE_FORM_FIELDS = [
   'force_format',
   'thinking_to_content',
   'proxy',
+  'first_response_timeout_seconds',
   'pass_through_body_enabled',
   'system_prompt',
   'system_prompt_override',
@@ -333,6 +334,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.priority ||
     values.weight ||
     values.proxy?.trim() ||
+    values.first_response_timeout_seconds ||
     values.system_prompt?.trim() ||
     values.force_format ||
     values.thinking_to_content ||
@@ -744,6 +746,9 @@ export function ChannelMutateDrawer({
     'disable_task_polling_sleep'
   )
   const currentProxy = form.watch('proxy')
+  const currentFirstResponseTimeoutSeconds = form.watch(
+    'first_response_timeout_seconds'
+  )
   const currentSystemPrompt = form.watch('system_prompt')
   const currentSystemPromptOverride = form.watch('system_prompt_override')
   const currentAllowServiceTier = form.watch('allow_service_tier')
@@ -1009,6 +1014,7 @@ export function ChannelMutateDrawer({
     currentPassThroughBodyEnabled ||
     currentDisableTaskPollingSleep ||
     currentProxy?.trim() ||
+    currentFirstResponseTimeoutSeconds ||
     currentSystemPrompt?.trim() ||
     currentSystemPromptOverride
   )
@@ -4188,6 +4194,44 @@ export function ChannelMutateDrawer({
                                   <FormDescription>
                                     {t(
                                       'Network proxy for this channel (supports socks5 protocol)'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='first_response_timeout_seconds'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    {t('First response timeout (seconds)')}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type='number'
+                                      min={0}
+                                      step={1}
+                                      placeholder='0'
+                                      {...field}
+                                      value={field.value ?? 0}
+                                      onChange={(event) =>
+                                        field.onChange(
+                                          Math.max(
+                                            0,
+                                            Math.trunc(
+                                              Number(event.target.value) || 0
+                                            )
+                                          )
+                                        )
+                                      }
+                                    />
+                                  </FormControl>
+                                  <FormDescription className='text-amber-700 dark:text-amber-300'>
+                                    {t(
+                                      'For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.'
                                     )}
                                   </FormDescription>
                                   <FormMessage />

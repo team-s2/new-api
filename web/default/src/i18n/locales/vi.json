@@ -1997,6 +1997,8 @@
     "Find the ratio.": "Xác định hệ số.",
     "Finish Time": "Thời gian hoàn thành",
     "First API request": "Yêu cầu API đầu tiên",
+    "First response timeout (seconds)": "Thời gian chờ phản hồi đầu tiên (giây)",
+    "For streaming requests, cancel and retry if no meaningful upstream data arrives within this many seconds. Set to 0 to disable. Retrying may cause duplicate upstream charges.": "Với yêu cầu truyền phát, hủy và thử lại nếu không nhận được dữ liệu thượng nguồn có ý nghĩa trong số giây này. Đặt 0 để tắt. Việc thử lại có thể gây tính phí trùng lặp từ thượng nguồn.",
     "First token": "Token đầu",
     "First/Last Frame to Video": "Khung đầu/cuối sang video",
     "Fix Abilities": "Sửa tính nhất quán kênh",

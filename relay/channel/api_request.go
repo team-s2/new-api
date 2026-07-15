@@ -1,11 +1,14 @@
 package channel
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"regexp"
 	"strings"
 	"sync"
@@ -476,6 +479,183 @@ func sendPingData(c *gin.Context, mutex *sync.Mutex) error {
 func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	return doRequest(c, req, info)
 }
+
+type firstResponseTimeoutGuard struct {
+	duration  time.Duration
+	cancel    context.CancelFunc
+	startOnce sync.Once
+
+	mu        sync.Mutex
+	startedAt time.Time
+	timedOut  bool
+	timer     *time.Timer
+}
+
+func newFirstResponseTimeoutGuard(duration time.Duration, cancel context.CancelFunc) *firstResponseTimeoutGuard {
+	return &firstResponseTimeoutGuard{duration: duration, cancel: cancel}
+}
+
+// Start is called by net/http only after the complete request, including its
+// body, has been written to the upstream connection.
+func (g *firstResponseTimeoutGuard) Start() {
+	if g == nil {
+		return
+	}
+	g.startOnce.Do(func() {
+		g.mu.Lock()
+		g.startedAt = time.Now()
+		g.timer = time.AfterFunc(g.duration, func() {
+			g.mu.Lock()
+			g.timedOut = true
+			g.mu.Unlock()
+			g.cancel()
+		})
+		g.mu.Unlock()
+	})
+}
+
+func (g *firstResponseTimeoutGuard) Stop() {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.timer != nil {
+		g.timer.Stop()
+	}
+}
+
+func (g *firstResponseTimeoutGuard) TimedOut() (bool, time.Time) {
+	if g == nil {
+		return false, time.Time{}
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.timedOut, g.startedAt
+}
+
+type prefixedReadCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (r *prefixedReadCloser) Close() error {
+	return r.closer.Close()
+}
+
+func restorePrefetchedBody(resp *http.Response, reader *bufio.Reader, prefetched []byte) {
+	resp.Body = &prefixedReadCloser{
+		Reader: io.MultiReader(bytes.NewReader(prefetched), reader),
+		closer: resp.Body,
+	}
+}
+
+func getSSEDataPayload(line string) (string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "data:") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(line, "data:")), true
+}
+
+func isSSEPingPayload(payload string) bool {
+	compact := strings.ToLower(strings.TrimSpace(payload))
+	switch compact {
+	case "ping", "[ping]", "pong", "[pong]":
+		return true
+	}
+	compact = strings.NewReplacer(" ", "", "\t", "", "\r", "", "\n", "").Replace(compact)
+	return strings.HasPrefix(compact, "{\"type\":\"ping\"")
+}
+
+func waitForFirstStreamPayload(resp *http.Response, info *common.RelayInfo, guard *firstResponseTimeoutGuard) error {
+	if resp == nil || resp.Body == nil {
+		return errors.New("upstream stream response body is nil")
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	prefetched := bytes.Buffer{}
+	isSSE := strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream")
+	eventIsPing := false
+
+	for {
+		if isSSE {
+			line, err := reader.ReadString('\n')
+			prefetched.WriteString(line)
+			trimmedLine := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmedLine, "event:") {
+				eventIsPing = strings.EqualFold(strings.TrimSpace(strings.TrimPrefix(trimmedLine, "event:")), "ping")
+			}
+			if payload, ok := getSSEDataPayload(line); ok && payload != "" && !eventIsPing && !isSSEPingPayload(payload) {
+				guard.Stop()
+				restorePrefetchedBody(resp, reader, prefetched.Bytes())
+				info.SetFirstResponseTime()
+				return nil
+			}
+			if trimmedLine == "" {
+				eventIsPing = false
+			}
+			if err != nil {
+				if timedOut, _ := guard.TimedOut(); timedOut {
+					return types.NewErrorWithStatusCode(fmt.Errorf("upstream first stream event timed out"), types.ErrorCodeUpstreamFirstResponseTimeout, http.StatusGatewayTimeout)
+				}
+				if err == io.EOF {
+					restorePrefetchedBody(resp, reader, prefetched.Bytes())
+					return nil
+				}
+				return err
+			}
+			continue
+		}
+
+		b, err := reader.ReadByte()
+		if err == nil {
+			prefetched.WriteByte(b)
+			if !isStreamWhitespace(b) {
+				guard.Stop()
+				restorePrefetchedBody(resp, reader, prefetched.Bytes())
+				info.SetFirstResponseTime()
+				return nil
+			}
+			continue
+		}
+		if timedOut, _ := guard.TimedOut(); timedOut {
+			return types.NewErrorWithStatusCode(fmt.Errorf("upstream first stream payload timed out"), types.ErrorCodeUpstreamFirstResponseTimeout, http.StatusGatewayTimeout)
+		}
+		if err == io.EOF {
+			restorePrefetchedBody(resp, reader, prefetched.Bytes())
+			return nil
+		}
+		return err
+	}
+}
+
+func isStreamWhitespace(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\r' || b == '\n'
+}
+
+func recordFirstResponseTimeout(c *gin.Context, info *common.RelayInfo, phase string, timeout time.Duration, startedAt time.Time) {
+	elapsed := time.Duration(0)
+	if !startedAt.IsZero() {
+		elapsed = time.Since(startedAt)
+	}
+	attempt := map[string]interface{}{
+		"channel_id":           info.ChannelId,
+		"retry_index":          info.RetryIndex,
+		"timeout_seconds":      timeout.Seconds(),
+		"elapsed_milliseconds": elapsed.Milliseconds(),
+		"phase":                phase,
+	}
+	attempts, _ := c.Get("first_response_timeout_attempts")
+	if values, ok := attempts.([]map[string]interface{}); ok {
+		attempts = append(values, attempt)
+	} else {
+		attempts = []map[string]interface{}{attempt}
+	}
+	c.Set("first_response_timeout_attempts", attempts)
+	logger.LogWarn(c, fmt.Sprintf("upstream first-response timeout: request_id=%s channel_id=%d retry_index=%d phase=%s timeout=%s elapsed=%s", info.RequestId, info.ChannelId, info.RetryIndex, phase, timeout, elapsed))
+}
+
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	var client *http.Client
 	var err error
@@ -488,9 +668,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		client = service.GetHttpClient()
 	}
 
+	firstResponseTimeout := time.Duration(info.ChannelSetting.FirstResponseTimeoutSeconds) * time.Second
+	enableFirstResponseTimeout := info.IsStream && firstResponseTimeout > 0
+
 	var stopPinger context.CancelFunc
 	var pingerDone <-chan struct{}
-	if info.IsStream {
+	if info.IsStream && !enableFirstResponseTimeout {
 		helper.SetEventStreamHeaders(c)
 		// 处理流式请求的 ping 保活
 		generalSettings := operation_setting.GetGeneralSetting()
@@ -510,11 +693,35 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	// Inherit the relay attempt span and inject its W3C trace context into the
 	// upstream provider request through the instrumented HTTP transport.
-	req = req.WithContext(c.Request.Context())
+	baseCtx := req.Context()
+	if c.Request != nil {
+		baseCtx = c.Request.Context()
+	}
+	var guard *firstResponseTimeoutGuard
+	if enableFirstResponseTimeout {
+		upstreamCtx, cancel := context.WithCancel(baseCtx)
+		guard = newFirstResponseTimeoutGuard(firstResponseTimeout, cancel)
+		trace := &httptrace.ClientTrace{
+			WroteRequest: func(httptrace.WroteRequestInfo) {
+				guard.Start()
+			},
+		}
+		req = req.WithContext(httptrace.WithClientTrace(upstreamCtx, trace))
+		defer guard.Stop()
+	} else {
+		req = req.WithContext(baseCtx)
+	}
 	attemptSpan := trace.SpanFromContext(req.Context())
 	attemptSpan.AddEvent("llm.upstream.request.start")
 	resp, err := client.Do(req)
 	if err != nil {
+		if c.Request != nil && c.Request.Context().Err() != nil {
+			return nil, types.NewError(c.Request.Context().Err(), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+		if timedOut, startedAt := guard.TimedOut(); timedOut {
+			recordFirstResponseTimeout(c, info, "waiting_response_headers", firstResponseTimeout, startedAt)
+			return nil, types.NewErrorWithStatusCode(fmt.Errorf("upstream first response timed out after %s", firstResponseTimeout), types.ErrorCodeUpstreamFirstResponseTimeout, http.StatusGatewayTimeout)
+		}
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
@@ -525,12 +732,36 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		trace.WithAttributes(attribute.Int("http.response.status_code", resp.StatusCode)),
 	)
 
+	firstResponseGatePassed := false
+	if enableFirstResponseTimeout && resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		if err := waitForFirstStreamPayload(resp, info, guard); err != nil {
+			_ = resp.Body.Close()
+			if c.Request != nil && c.Request.Context().Err() != nil {
+				return nil, types.NewError(c.Request.Context().Err(), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+			if timedOut, startedAt := guard.TimedOut(); timedOut {
+				recordFirstResponseTimeout(c, info, "waiting_first_stream_event", firstResponseTimeout, startedAt)
+			}
+			return nil, err
+		}
+		firstResponseGatePassed = true
+	}
+	if firstResponseGatePassed {
+		// Do not commit downstream SSE headers until a meaningful upstream
+		// payload passes the gate; before that point the outer relay may retry.
+		helper.SetEventStreamHeaders(c)
+	}
+
 	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)
 	}
 
-	_ = req.Body.Close()
-	_ = c.Request.Body.Close()
+	if req.Body != nil {
+		_ = req.Body.Close()
+	}
+	if c.Request != nil && c.Request.Body != nil {
+		_ = c.Request.Body.Close()
+	}
 	return resp, nil
 }
 
