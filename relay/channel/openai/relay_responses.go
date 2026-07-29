@@ -32,14 +32,24 @@ func isResponsesStreamPreludeEvent(eventType string) bool {
 }
 
 func responsesStreamServerOverloadedError(streamResponse dto.ResponsesStreamResponse) *types.NewAPIError {
-	if streamResponse.Type != "response.failed" || streamResponse.Response == nil {
+	switch streamResponse.Type {
+	case "error", "response.error", "response.failed":
+	default:
 		return nil
 	}
-	openAIError := streamResponse.Response.GetOpenAIError()
-	if openAIError == nil || !types.IsServerOverloadedCode(openAIError.Code) {
-		return nil
+
+	errorFields := []any{streamResponse.Error}
+	if streamResponse.Response != nil {
+		errorFields = append(errorFields, streamResponse.Response.Error)
 	}
-	return types.WithOpenAIError(*openAIError, http.StatusServiceUnavailable)
+	for _, errorField := range errorFields {
+		openAIError := dto.GetOpenAIError(errorField)
+		if openAIError == nil || !types.IsServerOverloadedCode(openAIError.Code) {
+			continue
+		}
+		return types.WithOpenAIError(*openAIError, http.StatusServiceUnavailable)
+	}
+	return nil
 }
 
 func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

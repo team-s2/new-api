@@ -54,7 +54,9 @@ func TestOaiResponsesStreamHandler_RetriesServerOverloadBeforeVisibleOutput(t *t
 		"",
 		`data: {"type":"response.in_progress","response":{"id":"resp_overload","status":"in_progress"}}`,
 		"",
-		`data: {"type":"response.failed","response":{"id":"resp_overload","status":"failed","error":{"type":"server_error","code":"server_is_overloaded","message":"server is overloaded"}}}`,
+		`data: {"type":"error","error":{"type":"service_unavailable_error","code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}`,
+		"",
+		`data: {"type":"response.failed","response":{"id":"resp_overload","status":"failed","error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded. Please try again later."}}}`,
 		"",
 	}, "\n")
 	c, recorder, resp, info := newResponsesStreamHandlerTest(t, stream)
