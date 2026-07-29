@@ -67,3 +67,23 @@ func TestRelayInfoFirstResponseRecordsOneTraceEvent(t *testing.T) {
 	require.Len(t, spans[0].Events(), 1)
 	require.Equal(t, "llm.response.first_chunk", spans[0].Events()[0].Name)
 }
+
+func TestRelayInfoResetFirstResponseTimeAllowsRetryToRecordNewAttempt(t *testing.T) {
+	startTime := time.Now().Add(-time.Second)
+	info := &RelayInfo{
+		StartTime:         startTime,
+		FirstResponseTime: startTime.Add(-time.Second),
+		isFirstResponse:   true,
+	}
+
+	info.SetFirstResponseTime()
+	require.True(t, info.HasSendResponse())
+
+	info.ResetFirstResponseTime()
+	require.Equal(t, startTime.Add(-time.Second), info.FirstResponseTime)
+	require.False(t, info.HasSendResponse())
+	require.True(t, info.isFirstResponse)
+
+	info.SetFirstResponseTime()
+	require.True(t, info.HasSendResponse())
+}

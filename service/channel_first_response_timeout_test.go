@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/require"
 )
@@ -23,4 +24,24 @@ func TestShouldDisableChannelSkipsFirstResponseTimeout(t *testing.T) {
 		http.StatusGatewayTimeout,
 	)
 	require.False(t, ShouldDisableChannel(timeoutErr))
+}
+
+func TestShouldDisableChannelSkipsServerOverload(t *testing.T) {
+	previousEnabled := common.AutomaticDisableChannelEnabled
+	previousRanges := operation_setting.AutomaticDisableStatusCodeRanges
+	common.AutomaticDisableChannelEnabled = true
+	operation_setting.AutomaticDisableStatusCodeRanges = []operation_setting.StatusCodeRange{
+		{Start: http.StatusServiceUnavailable, End: http.StatusServiceUnavailable},
+	}
+	t.Cleanup(func() {
+		common.AutomaticDisableChannelEnabled = previousEnabled
+		operation_setting.AutomaticDisableStatusCodeRanges = previousRanges
+	})
+
+	overloadedErr := types.WithOpenAIError(types.OpenAIError{
+		Message: "server is overloaded",
+		Type:    "server_error",
+		Code:    "server_is_overloaded",
+	}, http.StatusServiceUnavailable)
+	require.False(t, ShouldDisableChannel(overloadedErr))
 }

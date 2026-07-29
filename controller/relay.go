@@ -119,7 +119,15 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			if relayFormat != types.RelayFormatOpenAIRealtime && c.Writer.Written() {
+				if relayFormat == types.RelayFormatOpenAIResponses && types.IsServerOverloadedError(newAPIError) {
+					if err := helper.ResponsesStreamError(c, newAPIError.ToOpenAIError()); err != nil {
+						logger.LogError(c, fmt.Sprintf("write responses stream error: %s", err.Error()))
+					}
+				}
 				return
+			}
+			if relayFormat == types.RelayFormatOpenAIResponses && types.IsServerOverloadedError(newAPIError) {
+				c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 			}
 			switch relayFormat {
 			case types.RelayFormatOpenAIRealtime:

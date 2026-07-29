@@ -17,6 +17,31 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type responsesStreamChunk struct {
+	response dto.ResponsesStreamResponse
+	data     string
+}
+
+func isResponsesStreamPreludeEvent(eventType string) bool {
+	switch eventType {
+	case "response.created", "response.in_progress", "response.queued":
+		return true
+	default:
+		return false
+	}
+}
+
+func responsesStreamServerOverloadedError(streamResponse dto.ResponsesStreamResponse) *types.NewAPIError {
+	if streamResponse.Type != "response.failed" || streamResponse.Response == nil {
+		return nil
+	}
+	openAIError := streamResponse.Response.GetOpenAIError()
+	if openAIError == nil || !types.IsServerOverloadedCode(openAIError.Code) {
+		return nil
+	}
+	return types.WithOpenAIError(*openAIError, http.StatusServiceUnavailable)
+}
+
 func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
 
@@ -76,19 +101,19 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 	}
 
 	defer service.CloseResponseBodyGracefully(resp)
+	info.StreamStatus = relaycommon.NewStreamStatus()
+	info.ReceivedResponseCount = 0
 
 	var usage = &dto.Usage{}
 	var responseTextBuilder strings.Builder
+	// Do not expose lifecycle-only events until the stream produces stateful output.
+	// This leaves the outer relay free to retry an admission/capacity failure
+	// without duplicating text, reasoning, or tool-call events downstream.
+	var pendingChunks []responsesStreamChunk
+	var streamErr *types.NewAPIError
+	streamCommitted := false
 
-	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
-
-		// 检查当前数据是否包含 completed 状态和 usage 信息
-		var streamResponse dto.ResponsesStreamResponse
-		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
-			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
-			sr.Error(err)
-			return
-		}
+	handleChunk := func(streamResponse dto.ResponsesStreamResponse, data string) {
 		sendResponsesStreamData(c, streamResponse, data)
 		switch streamResponse.Type {
 		case "response.completed":
@@ -115,10 +140,8 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			}
 		case "response.output_text.delta":
-			// 处理输出文本
 			responseTextBuilder.WriteString(streamResponse.Delta)
 		case dto.ResponsesOutputTypeItemDone:
-			// 函数调用处理
 			if streamResponse.Item != nil {
 				switch streamResponse.Item.Type {
 				case dto.BuildInCallWebSearchCall:
@@ -130,7 +153,51 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				}
 			}
 		}
+	}
+
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		var streamResponse dto.ResponsesStreamResponse
+		if err := common.UnmarshalJsonStr(data, &streamResponse); err != nil {
+			logger.LogError(c, "failed to unmarshal stream response: "+err.Error())
+			sr.Error(err)
+			return
+		}
+
+		if !streamCommitted {
+			if overloadedErr := responsesStreamServerOverloadedError(streamResponse); overloadedErr != nil {
+				streamErr = overloadedErr
+				sr.Stop(overloadedErr)
+				return
+			}
+
+			pendingChunks = append(pendingChunks, responsesStreamChunk{
+				response: streamResponse,
+				data:     data,
+			})
+			if isResponsesStreamPreludeEvent(streamResponse.Type) {
+				return
+			}
+
+			streamCommitted = true
+			for _, chunk := range pendingChunks {
+				handleChunk(chunk.response, chunk.data)
+			}
+			pendingChunks = nil
+			return
+		}
+
+		handleChunk(streamResponse, data)
 	})
+
+	if streamErr != nil {
+		info.ResetFirstResponseTime()
+		return nil, streamErr
+	}
+	if !streamCommitted {
+		for _, chunk := range pendingChunks {
+			handleChunk(chunk.response, chunk.data)
+		}
+	}
 
 	if usage.CompletionTokens == 0 {
 		// 计算输出文本的 token 数量

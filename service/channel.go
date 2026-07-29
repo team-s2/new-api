@@ -52,6 +52,9 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if err.GetErrorCode() == types.ErrorCodeUpstreamFirstResponseTimeout {
 		return false
 	}
+	if types.IsServerOverloadedError(err) {
+		return false
+	}
 	if types.IsChannelError(err) {
 		return true
 	}

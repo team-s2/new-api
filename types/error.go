@@ -371,6 +371,18 @@ func IsChannelError(err *NewAPIError) bool {
 	return strings.HasPrefix(string(err.errorCode), "channel:")
 }
 
+func IsServerOverloadedCode(code any) bool {
+	codeString := strings.ToLower(strings.TrimSpace(fmt.Sprint(code)))
+	return codeString == "server_is_overloaded" || codeString == "slow_down"
+}
+
+func IsServerOverloadedError(err *NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	return IsServerOverloadedCode(err.ToOpenAIError().Code)
+}
+
 func IsSkipRetryError(err *NewAPIError) bool {
 	if err == nil {
 		return false

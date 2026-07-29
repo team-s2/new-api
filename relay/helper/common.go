@@ -94,6 +94,29 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 	return FlushWriter(c)
 }
 
+func ResponsesStreamError(c *gin.Context, openAIError types.OpenAIError) error {
+	payload := struct {
+		Type     string `json:"type"`
+		Response struct {
+			Status string            `json:"status"`
+			Error  types.OpenAIError `json:"error"`
+		} `json:"response"`
+	}{
+		Type: "response.failed",
+	}
+	payload.Response.Status = "failed"
+	payload.Response.Error = openAIError
+
+	data, err := common.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal responses stream error: %w", err)
+	}
+	SetEventStreamHeaders(c)
+	c.Render(-1, common.CustomEvent{Data: "event: response.failed\n"})
+	c.Render(-1, common.CustomEvent{Data: "data: " + string(data)})
+	return FlushWriter(c)
+}
+
 func StringData(c *gin.Context, str string) error {
 	if c == nil || c.Writer == nil {
 		return errors.New("context or writer is nil")
