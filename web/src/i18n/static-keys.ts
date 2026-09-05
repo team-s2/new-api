@@ -29,6 +29,9 @@ export const STATIC_I18N_KEYS = [
   'Invalid channel header override',
   'Invalid channel proxy',
   'For this channel, map the model name in client requests to the model name sent upstream.',
+  // Zhipu Coding Plan usage window quota bases, sent by the backend as limit.unit.
+  'credits',
+  'prompts',
   // Channel provider labels, descriptions and presentation badges.
   'Zhipu GLM',
   'Connect to the OpenAI API or compatible services',

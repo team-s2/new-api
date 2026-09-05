@@ -95,6 +95,52 @@ export type CodexResetCreditsResponse = CodexUsageResponse
 
 export type CodexUsageResetResponse = CodexUsageResponse
 
+export type ZhipuCodingPlanUsageLimit = {
+  usage?: number
+  current_value?: number
+  remaining?: number
+  percentage: number
+  next_reset_time?: number
+  unit?: 'credits' | 'prompts'
+  usage_details?: Array<{
+    model_code: string
+    usage: number
+  }>
+}
+
+export type ZhipuCodingPlanResetCard = {
+  expire_at?: number
+}
+
+export type ZhipuCodingPlanResetStatus = {
+  available_five_hour_resets?: ZhipuCodingPlanResetCard[]
+  available_week_resets?: ZhipuCodingPlanResetCard[]
+  latest_five_hour_reset_history?: { used_at?: number } | null
+  latest_week_reset_history?: { used_at?: number } | null
+  has_unread_history?: boolean
+}
+
+export type ZhipuCodingPlanUsageResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    level?: string
+    five_hour?: ZhipuCodingPlanUsageLimit
+    weekly?: ZhipuCodingPlanUsageLimit
+    mcp_monthly?: ZhipuCodingPlanUsageLimit
+    reset?: ZhipuCodingPlanResetStatus | null
+    reset_unavailable_reason?: string
+  }
+}
+
+export type ZhipuCodingPlanResetResponse = {
+  success: boolean
+  message?: string
+  data?: {
+    used?: boolean
+  }
+}
+
 export type CodexCredentialRefreshResponse = {
   success: boolean
   message?: string
@@ -402,6 +448,67 @@ export async function resetCodexUsage(
     `/api/channel/${channelId}/codex/usage/reset`,
     {},
     channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export async function getZhipuCodingPlanUsage(
+  channelId: number
+): Promise<ZhipuCodingPlanUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/zhipu/coding-plan/usage`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export async function useZhipuCodingPlanReset(
+  channelId: number,
+  resetType: 'FIVE_HOUR' | 'WEEK'
+): Promise<ZhipuCodingPlanResetResponse> {
+  const res = await api.post(
+    `/api/channel/${channelId}/zhipu/coding-plan/reset`,
+    { reset_type: resetType },
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export interface ZhipuOAuthLoginResponse {
+  success: boolean
+  message?: string
+  data?: {
+    authorize_url: string
+    state: string
+  }
+}
+
+export interface ZhipuOAuthExchangeResponse {
+  success: boolean
+  message?: string
+  data?: {
+    credential: string
+    username: string
+  }
+}
+
+export async function startZhipuOAuthLogin(): Promise<ZhipuOAuthLoginResponse> {
+  const res = await api.post(
+    '/api/channel/zhipu/oauth/login',
+    {},
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export async function exchangeZhipuOAuthToken(
+  input: string,
+  state: string
+): Promise<ZhipuOAuthExchangeResponse> {
+  const res = await api.post(
+    '/api/channel/zhipu/oauth/exchange',
+    { input, state },
+    channelActionConfig()
   )
   return res.data
 }

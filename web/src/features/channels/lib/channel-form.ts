@@ -22,6 +22,7 @@ import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_OLLAMA,
+  CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
@@ -160,6 +161,22 @@ function isOptionalStatusCodeMapping(value: string | undefined): boolean {
   }
 }
 
+function isBigModelSubCredential(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    if (parsed === undefined) return true
+    return (
+      isJsonObjectValue(parsed) &&
+      typeof parsed.api_key === 'string' &&
+      parsed.api_key.trim().length > 0 &&
+      typeof parsed.access_token === 'string' &&
+      parsed.access_token.trim().length > 0
+    )
+  } catch {
+    return false
+  }
+}
+
 function isCodexCredential(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -170,6 +187,24 @@ function isCodexCredential(value: string | undefined): boolean {
       parsed.access_token.trim().length > 0 &&
       typeof parsed.account_id === 'string' &&
       parsed.account_id.trim().length > 0
+    )
+  } catch {
+    return false
+  }
+}
+
+function isZhipuCodingPlanCredential(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    if (parsed === undefined) return true
+    return (
+      isJsonObjectValue(parsed) &&
+      typeof parsed.api_key === 'string' &&
+      parsed.api_key.trim().length > 0 &&
+      typeof parsed.account_username === 'string' &&
+      parsed.account_username.trim().length > 0 &&
+      typeof parsed.account_password === 'string' &&
+      parsed.account_password.trim().length > 0
     )
   } catch {
     return false
@@ -373,6 +408,36 @@ export const channelFormSchema = z
           'Codex credential must be a JSON object with access_token and account_id'
         )
       }
+    }
+
+    if (data.type === CHANNEL_TYPE_BIGMODEL_SUB) {
+      if (data.multi_key_mode && data.multi_key_mode !== 'single') {
+        addRequiredIssue(
+          ctx,
+          'multi_key_mode',
+          'BigModel Subscription channels do not support batch creation'
+        )
+      }
+      if (data.key?.trim() && !isBigModelSubCredential(data.key)) {
+        addRequiredIssue(
+          ctx,
+          'key',
+          'BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)'
+        )
+      }
+    }
+
+    if (
+      data.type === 26 &&
+      data.base_url?.trim() === 'glm-coding-plan' &&
+      data.key?.trim().startsWith('{') &&
+      !isZhipuCodingPlanCredential(data.key)
+    ) {
+      addRequiredIssue(
+        ctx,
+        'key',
+        'Zhipu Coding Plan credential must include api_key, account_username, and account_password'
+      )
     }
 
     if (

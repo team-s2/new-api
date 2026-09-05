@@ -61,6 +61,9 @@ const (
 	ChannelTypeTaskPlugin     = 61
 	ChannelTypeVLLM           = 62
 	ChannelTypeSGLang         = 63
+	// 从 100 起预留较大编号，避免与上游新增渠道类型（62/63 已被 VLLM/SGLang
+	// 占用）再次冲突；持久化编号必须与前端保持一致。
+	ChannelTypeBigModelSub    = 100
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -132,6 +135,45 @@ var ChannelBaseURLs = []string{
 	"",                                          //61
 	"",                                          //62
 	"",                                          //63
+	// 64-99 预留给上游未来新增的渠道类型；BigModel Coding Plan 固定使用 100。
+	"",                                          //64
+	"",                                          //65
+	"",                                          //66
+	"",                                          //67
+	"",                                          //68
+	"",                                          //69
+	"",                                          //70
+	"",                                          //71
+	"",                                          //72
+	"",                                          //73
+	"",                                          //74
+	"",                                          //75
+	"",                                          //76
+	"",                                          //77
+	"",                                          //78
+	"",                                          //79
+	"",                                          //80
+	"",                                          //81
+	"",                                          //82
+	"",                                          //83
+	"",                                          //84
+	"",                                          //85
+	"",                                          //86
+	"",                                          //87
+	"",                                          //88
+	"",                                          //89
+	"",                                          //90
+	"",                                          //91
+	"",                                          //92
+	"",                                          //93
+	"",                                          //94
+	"",                                          //95
+	"",                                          //96
+	"",                                          //97
+	"",                                          //98
+	"",                                          //99
+	"glm-coding-plan",                           //100
+
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -202,6 +244,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeTaskPlugin:     "Task Plugin",
 	ChannelTypeVLLM:           "vLLM",
 	ChannelTypeSGLang:         "SGLang",
+	ChannelTypeBigModelSub:    "BigModel Subscription (Coding Plan)",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -212,14 +255,16 @@ func GetChannelTypeName(channelType int) string {
 }
 
 type ChannelSpecialBase struct {
-	ClaudeBaseURL string
-	OpenAIBaseURL string
+	ClaudeBaseURL    string
+	OpenAIBaseURL    string
+	ResponsesBaseURL string
 }
 
 var ChannelSpecialBases = map[string]ChannelSpecialBase{
 	"glm-coding-plan": {
-		ClaudeBaseURL: "https://open.bigmodel.cn/api/anthropic",
-		OpenAIBaseURL: "https://open.bigmodel.cn/api/coding/paas/v4",
+		ClaudeBaseURL:    "https://open.bigmodel.cn/api/anthropic",
+		OpenAIBaseURL:    "https://open.bigmodel.cn/api/coding/paas/v4",
+		ResponsesBaseURL: "https://open.bigmodel.cn/api/v1",
 	},
 	"glm-coding-plan-international": {
 		ClaudeBaseURL: "https://api.z.ai/api/anthropic",

@@ -114,6 +114,11 @@ func TestValidateChannelRequiresNewAPIBaseURL(t *testing.T) {
 	}
 }
 
+func TestValidateBigModelSubscriptionAllowsBlankKeyOnUpdate(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeBigModelSub, Key: "", Models: "glm-5"}
+	require.NoError(t, validateChannel(channel, false))
+}
+
 func TestNewAPIChannelRegistration(t *testing.T) {
 	apiType, ok := common.ChannelType2APIType(constant.ChannelTypeNewAPI)
 
@@ -324,6 +329,25 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, userID)
+}
+
+func TestNormalizeChannelTestEndpointUsesImagesForCodexImageModel(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeCodex}
+
+	endpointType := normalizeChannelTestEndpoint(channel, "gpt-image-2", "")
+	require.Equal(t, string(constant.EndpointTypeImageGeneration), endpointType)
+
+	request := buildTestRequest("gpt-image-2", endpointType, channel, true)
+	imageRequest, ok := request.(*dto.ImageRequest)
+	require.True(t, ok)
+	require.Equal(t, "gpt-image-2", imageRequest.Model)
+	require.Equal(t, "a cute cat", imageRequest.Prompt)
+	require.NotNil(t, imageRequest.Stream)
+	require.True(t, *imageRequest.Stream)
+
+	nonStreamRequest, ok := buildTestRequest("gpt-image-2", endpointType, channel, false).(*dto.ImageRequest)
+	require.True(t, ok)
+	require.Nil(t, nonStreamRequest.Stream)
 }
 
 func TestSelectChannelsForAutomaticTestPassiveRecoveryOnlyUsesAutoDisabled(t *testing.T) {

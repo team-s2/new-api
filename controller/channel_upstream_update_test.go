@@ -604,3 +604,97 @@ func TestDetectAllChannelUpstreamModelUpdatesRejectsExistingActiveTask(t *testin
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "已有模型更新任务正在运行或等待中")
 }
+
+func TestGetUpstreamModelsURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		channelType int
+		baseURL     string
+		expected    string
+	}{
+		{
+			name:        "Zhipu Coding Plan alias",
+			channelType: constant.ChannelTypeZhipu_v4,
+			baseURL:     "glm-coding-plan",
+			expected:    "https://open.bigmodel.cn/api/coding/paas/v4/models",
+		},
+		{
+			name:        "standard Zhipu endpoint",
+			channelType: constant.ChannelTypeZhipu_v4,
+			baseURL:     "https://open.bigmodel.cn/",
+			expected:    "https://open.bigmodel.cn/api/paas/v4/models",
+		},
+		{
+			name:        "generic OpenAI-compatible endpoint",
+			channelType: constant.ChannelTypeOpenAI,
+			baseURL:     "https://example.com/",
+			expected:    "https://example.com/v1/models",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.expected, getUpstreamModelsURL(test.channelType, test.baseURL))
+		})
+	}
+}
+
+func TestBuildFetchModelsHeadersUsesOnlyZhipuCodingPlanAPIKey(t *testing.T) {
+	baseURL := "glm-coding-plan"
+	channel := &model.Channel{
+		Type:    constant.ChannelTypeZhipu_v4,
+		BaseURL: &baseURL,
+	}
+	credential := `{
+		"api_key": "coding-key",
+		"account_username": "user",
+		"account_password": "password"
+	}`
+
+	headers, err := buildFetchModelsHeaders(channel, credential)
+
+	require.NoError(t, err)
+	require.Equal(t, "Bearer coding-key", headers.Get("Authorization"))
+	require.NotContains(t, headers.Get("Authorization"), "password")
+}
+
+func TestFetchBigModelModelsUsesCodingPlanAPIKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodGet, r.Method)
+		assert.Equal(t, "/api/coding/paas/v4/models", r.URL.Path)
+		assert.Equal(t, "Bearer coding-key", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		_, err := w.Write([]byte(`{"object":"list","data":[{"id":"glm-5.3"},{"id":" glm-5.3-flash "},{"id":"glm-5.3"}]}`))
+		assert.NoError(t, err)
+	}))
+	t.Cleanup(server.Close)
+	original := constant.ChannelSpecialBases["glm-coding-plan"]
+	plan := original
+	plan.OpenAIBaseURL = server.URL + "/api/coding/paas/v4"
+	constant.ChannelSpecialBases["glm-coding-plan"] = plan
+	t.Cleanup(func() { constant.ChannelSpecialBases["glm-coding-plan"] = original })
+	credential := `{
+  "api_key": "coding-key",
+  "access_token": "console-token",
+  "refresh_token": "refresh-token"
+ }`
+	for _, baseURL := range []string{"", "glm-coding-plan"} {
+		t.Run("saved_channel_"+baseURL, func(t *testing.T) {
+			channel := &model.Channel{Type: constant.ChannelTypeBigModelSub, Key: credential, BaseURL: &baseURL}
+			models, err := fetchChannelUpstreamModelIDs(channel)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"glm-5.3", "glm-5.3-flash"}, models)
+		})
+	}
+	t.Run("create_preview_with_multiline_oauth_credential", func(t *testing.T) {
+		body, err := common.Marshal(map[string]any{"type": constant.ChannelTypeBigModelSub, "base_url": "", "key": credential})
+		require.NoError(t, err)
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/fetch_models", bytes.NewReader(body))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		FetchModels(ctx)
+		assert.Equal(t, http.StatusOK, recorder.Code)
+		assert.JSONEq(t, `{"success":true,"message":"","data":["glm-5.3","glm-5.3-flash"]}`, recorder.Body.String())
+	})
+}

@@ -26,12 +26,14 @@ export const CHANNEL_TYPE_OLLAMA = 4
 export const CHANNEL_TYPE_SUB2API = 59
 
 export const CHANNEL_TYPE_NEW_API = 60
-
 export const CHANNEL_TYPE_TASK_PLUGIN = 61
 
 export const CHANNEL_TYPE_VLLM = 62
 
 export const CHANNEL_TYPE_SGLANG = 63
+
+// 100+ is reserved for fork-specific channels so upstream's growing type list (62/63 taken by vLLM/SGLang) cannot collide again.
+export const CHANNEL_TYPE_BIGMODEL_SUB = 100
 
 export const CHANNEL_TYPES = {
   0: 'Unknown',
@@ -94,6 +96,7 @@ export const CHANNEL_TYPES = {
   61: 'Task Plugin',
   62: 'vLLM',
   63: 'SGLang',
+  [CHANNEL_TYPE_BIGMODEL_SUB]: 'BigModel Subscription (Coding Plan)',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -177,6 +180,10 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
   },
   62: { descriptionKey: 'Connect to self-hosted models served by vLLM' },
   63: { descriptionKey: 'Connect to self-hosted models served by SGLang' },
+  [CHANNEL_TYPE_BIGMODEL_SUB]: {
+    descriptionKey:
+      'Access BigModel Coding Plan models through OAuth credentials',
+  },
 } satisfies Record<
   Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
   ChannelProviderPresentation
@@ -184,7 +191,8 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
 
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
-  4, 62, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 22, 21,
+  4, 62, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 100, 22,
+  21,
   44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
 ]
 
@@ -210,9 +218,7 @@ export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
 export function channelTypeOptionsForTaskPluginBind(
   canBindTaskPlugin: boolean
 ): { value: number; label: string }[] {
-  if (canBindTaskPlugin) {
-    return CHANNEL_TYPE_OPTIONS
-  }
+  if (canBindTaskPlugin) return CHANNEL_TYPE_OPTIONS
   return CHANNEL_TYPE_OPTIONS.filter(
     (option) => option.value !== CHANNEL_TYPE_TASK_PLUGIN
   )
@@ -522,6 +528,7 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   60,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
+  CHANNEL_TYPE_BIGMODEL_SUB,
 ])
 
 export const FIELD_PASSTHROUGH_TYPES = new Set([
@@ -567,6 +574,8 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   60: 'Enter API key for this channel',
   62: 'vLLM API key, or EMPTY if authentication is disabled',
   63: 'SGLang API key, or EMPTY if authentication is disabled',
+  [CHANNEL_TYPE_BIGMODEL_SUB]:
+    'Use OAuth login to obtain the BigModel Coding Plan credential JSON (api_key / access_token)',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

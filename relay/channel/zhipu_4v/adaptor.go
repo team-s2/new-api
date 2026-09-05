@@ -70,6 +70,9 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			}
 			return fmt.Sprintf("%s/api/paas/v4/images/generations", baseURL), nil
 		case relayconstant.RelayModeResponses:
+			if hasSpecialPlan && specialPlan.ResponsesBaseURL != "" {
+				return fmt.Sprintf("%s/responses", specialPlan.ResponsesBaseURL), nil
+			}
 			return fmt.Sprintf("%s/api/v1/responses", baseURL), nil
 		default:
 			if hasSpecialPlan && specialPlan.OpenAIBaseURL != "" {
@@ -82,7 +85,15 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
-	req.Set("Authorization", "Bearer "+info.ApiKey)
+	apiKey := info.ApiKey
+	if _, isCodingPlan := channelconstant.ChannelSpecialBases[info.ChannelBaseUrl]; isCodingPlan {
+		credential, err := ParseCodingPlanCredential(info.ApiKey)
+		if err != nil {
+			return err
+		}
+		apiKey = credential.APIKey
+	}
+	req.Set("Authorization", "Bearer "+apiKey)
 	return nil
 }
 
