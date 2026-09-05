@@ -3,6 +3,7 @@ package openai
 import (
 	"fmt"
 	"io"
+	"strings"
 	"net/http"
 
 	"github.com/QuantumNous/new-api/common"
@@ -88,11 +89,36 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
+		// incomplete/cancelled terminals are legitimate ends upstream bills
+		// normally: stop the stream with a normal reason so a client closing
+		// right after the terminal event cannot flip it to client_gone, while
+		// the accumulator's outcome classification records the nuance.
+		terminal := false
+		var responseStatus string
+		if streamResponse.Response != nil {
+			_ = common.Unmarshal(streamResponse.Response.Status, &responseStatus)
+		}
+		switch streamResponse.Type {
+		case "response.completed", "response.done", "response.incomplete", "response.cancelled", "response.canceled":
+			terminal = true
+			if strings.EqualFold(strings.TrimSpace(responseStatus), "failed") {
+				sr.Stop(fmt.Errorf("responses stream ended with status %s", streamResponse.Response.Status))
+			}
+		case "response.failed":
+			sr.Stop(fmt.Errorf("responses stream ended with event %s", streamResponse.Type))
+		}
 		if streamResponse.Response != nil {
 			data = string(rewriteSGLangResponsesCreatedAt(info, []byte(data), "response.created_at", streamResponse.Response.CreatedAt))
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		// 先保存上游 usage，再写客户端；写失败也不能丢失已产生的计费数据。
 		accumulator.Observe(&streamResponse)
+		if err := helper.ResponseChunkData(c, streamResponse, data); err != nil {
+			sr.Stop(err)
+			return
+		}
+		if terminal && !sr.IsStopped() {
+			sr.Done()
+		}
 	})
 
 	common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, info.StreamStatus)

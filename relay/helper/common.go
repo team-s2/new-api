@@ -89,8 +89,10 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
-	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
+	// 直接检查写入错误，Gin Render 和 CustomEvent 会吞掉底层写入失败。
+	if _, err := fmt.Fprintf(c.Writer, "event: %s\ndata: %s\n\n", resp.Type, data); err != nil {
+		return err
+	}
 	return FlushWriter(c)
 }
 
