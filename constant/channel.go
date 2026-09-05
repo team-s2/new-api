@@ -59,7 +59,8 @@ const (
 	ChannelTypeSub2API        = 59
 	ChannelTypeNewAPI         = 60
 	ChannelTypeTaskPlugin     = 61
-	ChannelTypeDummy          // this one is only for count, do not add any channel after this
+	ChannelTypeBigModelSub    = 62 // 61 已用于上游任务插件；持久化编号必须与前端一致。
+	ChannelTypeDummy               // this one is only for count, do not add any channel after this
 
 )
 
@@ -126,6 +127,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //59
 	"",                                          //60
 	"",                                          //61
+	"glm-coding-plan",                           //62
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -194,6 +196,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeTaskPlugin:     "Task Plugin",
+	ChannelTypeBigModelSub:    "BigModel Subscription (Coding Plan)",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -204,14 +207,16 @@ func GetChannelTypeName(channelType int) string {
 }
 
 type ChannelSpecialBase struct {
-	ClaudeBaseURL string
-	OpenAIBaseURL string
+	ClaudeBaseURL    string
+	OpenAIBaseURL    string
+	ResponsesBaseURL string
 }
 
 var ChannelSpecialBases = map[string]ChannelSpecialBase{
 	"glm-coding-plan": {
-		ClaudeBaseURL: "https://open.bigmodel.cn/api/anthropic",
-		OpenAIBaseURL: "https://open.bigmodel.cn/api/coding/paas/v4",
+		ClaudeBaseURL:    "https://open.bigmodel.cn/api/anthropic",
+		OpenAIBaseURL:    "https://open.bigmodel.cn/api/coding/paas/v4",
+		ResponsesBaseURL: "https://open.bigmodel.cn/api/v1",
 	},
 	"glm-coding-plan-international": {
 		ClaudeBaseURL: "https://api.z.ai/api/anthropic",

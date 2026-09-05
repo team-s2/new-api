@@ -5555,6 +5555,27 @@
     "Zhipu Coding Plan Account Info": "Сведения об аккаунте Zhipu Coding Plan",
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Учётные данные Zhipu Coding Plan должны включать api_key, account_username и account_password",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "BigModel Subscription channels do not support batch creation": "Каналы BigModel Subscription не поддерживают массовое создание",
+    "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)": "Учетные данные BigModel Subscription должны быть JSON, созданным при входе OAuth (требуются api_key и access_token)",
+    "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.": "Каналы BigModel Subscription используют учетные данные OAuth в качестве ключа. Получите их через вход OAuth.",
+    "OAuth login": "Вход OAuth",
+    "BigModel OAuth login": "Вход OAuth BigModel",
+    "BigModel Subscription (Coding Plan)": "BigModel Subscription (Coding Plan)",
+    "Log in on bigmodel.cn in your browser, then paste the callback link back here.": "Войдите на bigmodel.cn в браузере, затем вставьте ссылку обратного вызова сюда.",
+    "Failed to start OAuth login": "Не удалось начать вход OAuth",
+    "OAuth login failed": "Ошибка входа OAuth",
+    "OAuth login succeeded": "Вход OAuth выполнен",
+    "Logged in as {{name}}.": "Вы вошли как {{name}}.",
+    "The credential JSON has been generated, including the coding plan API key.": "JSON учетных данных создан, включая API-ключ Coding Plan.",
+    "Fill credential into key field": "Заполнить учетные данные в поле ключа",
+    "Step 1: Open the authorize URL and log in": "Шаг 1. Откройте URL авторизации и войдите",
+    "Generating authorize URL...": "Генерация URL авторизации...",
+    "Open authorize page": "Открыть страницу авторизации",
+    "Step 2: Paste the callback link": "Шаг 2. Вставьте ссылку обратного вызова",
+    "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "После входа браузер будет перенаправлен на ссылку zcode://, и система может предложить открыть ZCode — отмените, затем скопируйте полную ссылку из адресной строки и вставьте её ниже.",
+    "Exchanging...": "Обмен...",
+    "Complete login": "Завершить вход",
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "Отказ от ответственности: только для личного использования. Не распространяйте и не передавайте учетные данные. Этот канал ретранслирует вашу подписку BigModel Coding Plan; используйте его, только если понимаете процесс и риски и соблюдаете условия и политики Zhipu."
   }
 }

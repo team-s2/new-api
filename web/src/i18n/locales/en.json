@@ -5555,6 +5555,27 @@
     "Zhipu Coding Plan Account Info": "Zhipu Coding Plan Account Info",
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Zhipu Coding Plan credential must include api_key, account_username, and account_password",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "BigModel Subscription channels do not support batch creation": "BigModel Subscription channels do not support batch creation",
+    "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)": "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)",
+    "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.": "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.",
+    "OAuth login": "OAuth login",
+    "BigModel OAuth login": "BigModel OAuth login",
+    "BigModel Subscription (Coding Plan)": "BigModel Subscription (Coding Plan)",
+    "Log in on bigmodel.cn in your browser, then paste the callback link back here.": "Log in on bigmodel.cn in your browser, then paste the callback link back here.",
+    "Failed to start OAuth login": "Failed to start OAuth login",
+    "OAuth login failed": "OAuth login failed",
+    "OAuth login succeeded": "OAuth login succeeded",
+    "Logged in as {{name}}.": "Logged in as {{name}}.",
+    "The credential JSON has been generated, including the coding plan API key.": "The credential JSON has been generated, including the coding plan API key.",
+    "Fill credential into key field": "Fill credential into key field",
+    "Step 1: Open the authorize URL and log in": "Step 1: Open the authorize URL and log in",
+    "Generating authorize URL...": "Generating authorize URL...",
+    "Open authorize page": "Open authorize page",
+    "Step 2: Paste the callback link": "Step 2: Paste the callback link",
+    "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.",
+    "Exchanging...": "Exchanging...",
+    "Complete login": "Complete login",
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies."
   }
 }

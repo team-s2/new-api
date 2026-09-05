@@ -65,6 +65,8 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodGet, path: "/:id/codex/usage/reset-credits", permission: authz.ChannelRead, handler: controller.GetCodexChannelRateLimitResetCredits},
 	{method: http.MethodPost, path: "/:id/codex/usage/reset", permission: authz.ChannelOperate, handler: controller.ResetCodexChannelUsage},
 	{method: http.MethodGet, path: "/:id/zhipu/coding-plan/usage", permission: authz.ChannelRead, handler: controller.GetZhipuCodingPlanUsage},
+	{method: http.MethodPost, path: "/zhipu/oauth/login", permission: authz.ChannelSensitiveWrite, handler: controller.StartZhipuOAuthLogin},
+	{method: http.MethodPost, path: "/zhipu/oauth/exchange", permission: authz.ChannelSensitiveWrite, handler: controller.ExchangeZhipuOAuthToken},
 	{method: http.MethodPost, path: "/ollama/pull", permission: authz.ChannelSensitiveWrite, handler: controller.OllamaPullModel},
 	{method: http.MethodPost, path: "/ollama/pull/stream", permission: authz.ChannelSensitiveWrite, handler: controller.OllamaPullModelStream},
 	{method: http.MethodDelete, path: "/ollama/delete", permission: authz.ChannelSensitiveWrite, handler: controller.OllamaDeleteModel},

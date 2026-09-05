@@ -39,6 +39,7 @@ import {
   type ZhipuCodingPlanUsageResponse,
   updateChannelBalance,
 } from '../../api'
+import { CHANNEL_TYPE_BIGMODEL_SUB } from '../../constants'
 import { channelsQueryKeys } from '../../lib'
 import { useChannels } from '../channels-provider'
 import {
@@ -72,7 +73,8 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
 
   const isCodex = currentRow?.type === 57
   const isZhipuCodingPlan =
-    currentRow?.type === 26 && currentRow.base_url === 'glm-coding-plan'
+    currentRow?.type === CHANNEL_TYPE_BIGMODEL_SUB ||
+    (currentRow?.type === 26 && currentRow.base_url === 'glm-coding-plan')
 
   const handleQueryCodexUsage = async () => {
     const row = currentRow
@@ -120,10 +122,10 @@ export function BalanceQueryDialog(props: BalanceQueryDialogProps) {
   }, [props.open, isCodex])
 
   useEffect(() => {
-    if (!isZhipuCodingPlan || !open) return
+    if (!isZhipuCodingPlan || !props.open) return
     handleQueryZhipuUsage()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isZhipuCodingPlan])
+  }, [props.open, isZhipuCodingPlan, currentRow?.id])
 
   if (!currentRow) return null
 

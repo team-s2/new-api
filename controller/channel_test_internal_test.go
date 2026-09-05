@@ -87,6 +87,11 @@ func TestValidateChannelRequiresNewAPIBaseURL(t *testing.T) {
 	}
 }
 
+func TestValidateBigModelSubscriptionAllowsBlankKeyOnUpdate(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeBigModelSub, Key: "", Models: "glm-5"}
+	require.NoError(t, validateChannel(channel, false))
+}
+
 func TestNewAPIChannelRegistration(t *testing.T) {
 	apiType, ok := common.ChannelType2APIType(constant.ChannelTypeNewAPI)
 

@@ -5555,6 +5555,27 @@
     "Zhipu Coding Plan Account Info": "Zhipu Coding Plan アカウント情報",
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Zhipu Coding Plan の認証情報には api_key、account_username、account_password が必要です",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "BigModel Subscription channels do not support batch creation": "BigModel Subscription チャネルはバッチ作成に対応していません",
+    "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)": "BigModel Subscription の資格情報は OAuth ログインで生成された JSON である必要があります（api_key と access_token が必要）",
+    "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.": "BigModel Subscription チャネルは OAuth 資格情報をキーとして使用します。OAuth ログインで取得してください。",
+    "OAuth login": "OAuth ログイン",
+    "BigModel OAuth login": "BigModel OAuth ログイン",
+    "BigModel Subscription (Coding Plan)": "BigModel Subscription (Coding Plan)",
+    "Log in on bigmodel.cn in your browser, then paste the callback link back here.": "ブラウザで bigmodel.cn にログインし、コールバックリンクをここに貼り付けてください。",
+    "Failed to start OAuth login": "OAuth ログインの開始に失敗しました",
+    "OAuth login failed": "OAuth ログインに失敗しました",
+    "OAuth login succeeded": "OAuth ログインに成功しました",
+    "Logged in as {{name}}.": "{{name}} としてログインしました。",
+    "The credential JSON has been generated, including the coding plan API key.": "Coding Plan の API キーを含む資格情報 JSON が生成されました。",
+    "Fill credential into key field": "資格情報をキーフィールドに入力",
+    "Step 1: Open the authorize URL and log in": "ステップ 1: 認可 URL を開いてログイン",
+    "Generating authorize URL...": "認可 URL を生成中...",
+    "Open authorize page": "認可ページを開く",
+    "Step 2: Paste the callback link": "ステップ 2: コールバックリンクを貼り付け",
+    "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "ログイン後、ブラウザは zcode:// リンクにリダイレクトされ、ZCode を開くか確認される場合があります——キャンセルし、アドレスバーからリンク全体をコピーして下に貼り付けてください。",
+    "Exchanging...": "交換中...",
+    "Complete login": "ログインを完了",
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "免責事項：個人利用のみに限定してください。資格情報を配布・共有しないでください。このチャネルは BigModel Coding Plan のサブスクリプションを中継します。フローとリスクを理解し、Zhipu の利用規約とポリシーを遵守する場合にのみ使用してください。"
   }
 }

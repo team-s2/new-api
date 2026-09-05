@@ -236,7 +236,7 @@ func applyFetchModelsHeaderOverrides(channel *model.Channel, key string, headers
 
 func normalizeFetchModelsKey(channelType int, baseURL string, key string) (string, error) {
 	key = strings.TrimSpace(key)
-	if channelType != constant.ChannelTypeZhipu_v4 {
+	if channelType != constant.ChannelTypeZhipu_v4 && channelType != constant.ChannelTypeBigModelSub {
 		return key, nil
 	}
 	if _, ok := constant.ChannelSpecialBases[baseURL]; !ok {
@@ -569,6 +569,20 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 			}
 			if v, ok := keyMap["account_id"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
 				return fmt.Errorf("Codex key JSON must include account_id")
+			}
+		}
+	}
+
+	// BigModel Subscription (Coding Plan) key is always the JSON produced by
+	// the OAuth login helper.
+	if channel.Type == constant.ChannelTypeBigModelSub {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if isAdd || trimmedKey != "" {
+			if !strings.HasPrefix(trimmedKey, "{") {
+				return fmt.Errorf("BigModel Subscription key must be the JSON credential produced by OAuth login")
+			}
+			if _, err := zhipu_4v.ParseOAuthCredential(trimmedKey); err != nil {
+				return err
 			}
 		}
 	}

@@ -5555,6 +5555,27 @@
     "Zhipu Coding Plan Account Info": "Informations du compte Zhipu Coding Plan",
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Les identifiants Zhipu Coding Plan doivent inclure api_key, account_username et account_password",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "BigModel Subscription channels do not support batch creation": "Les canaux BigModel Subscription ne prennent pas en charge la création par lot",
+    "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)": "L'identifiant BigModel Subscription doit être le JSON généré par la connexion OAuth (api_key et access_token requis)",
+    "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.": "Les canaux BigModel Subscription utilisent un identifiant OAuth comme clé. Utilisez la connexion OAuth pour l'obtenir.",
+    "OAuth login": "Connexion OAuth",
+    "BigModel OAuth login": "Connexion OAuth BigModel",
+    "BigModel Subscription (Coding Plan)": "BigModel Subscription (Coding Plan)",
+    "Log in on bigmodel.cn in your browser, then paste the callback link back here.": "Connectez-vous sur bigmodel.cn dans votre navigateur, puis collez le lien de rappel ici.",
+    "Failed to start OAuth login": "Échec du démarrage de la connexion OAuth",
+    "OAuth login failed": "Échec de la connexion OAuth",
+    "OAuth login succeeded": "Connexion OAuth réussie",
+    "Logged in as {{name}}.": "Connecté en tant que {{name}}.",
+    "The credential JSON has been generated, including the coding plan API key.": "Le JSON d'identifiant a été généré, y compris la clé API du plan de codage.",
+    "Fill credential into key field": "Remplir l'identifiant dans le champ clé",
+    "Step 1: Open the authorize URL and log in": "Étape 1 : ouvrez l'URL d'autorisation et connectez-vous",
+    "Generating authorize URL...": "Génération de l'URL d'autorisation...",
+    "Open authorize page": "Ouvrir la page d'autorisation",
+    "Step 2: Paste the callback link": "Étape 2 : collez le lien de rappel",
+    "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "Après la connexion, le navigateur sera redirigé vers un lien zcode:// et le système peut demander à ouvrir ZCode — annulez, puis copiez le lien complet depuis la barre d'adresse et collez-le ci-dessous.",
+    "Exchanging...": "Échange en cours...",
+    "Complete login": "Terminer la connexion",
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "Avertissement : usage personnel uniquement. Ne distribuez ni ne partagez aucun identifiant. Ce canal relaie votre abonnement BigModel Coding Plan ; utilisez-le uniquement si vous comprenez le flux et les risques et si vous respectez les conditions et politiques de Zhipu."
   }
 }

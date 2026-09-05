@@ -5555,6 +5555,27 @@
     "Zhipu Coding Plan Account Info": "Thông tin tài khoản Zhipu Coding Plan",
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Thông tin xác thực Zhipu Coding Plan phải có api_key, account_username và account_password",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "BigModel Subscription channels do not support batch creation": "Kênh BigModel Subscription không hỗ trợ tạo hàng loạt",
+    "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)": "Thông tin xác thực BigModel Subscription phải là JSON được tạo bằng đăng nhập OAuth (yêu cầu api_key và access_token)",
+    "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.": "Kênh BigModel Subscription sử dụng thông tin xác thực OAuth làm khóa. Hãy đăng nhập OAuth để lấy.",
+    "OAuth login": "Đăng nhập OAuth",
+    "BigModel OAuth login": "Đăng nhập OAuth BigModel",
+    "BigModel Subscription (Coding Plan)": "BigModel Subscription (Coding Plan)",
+    "Log in on bigmodel.cn in your browser, then paste the callback link back here.": "Đăng nhập bigmodel.cn trên trình duyệt, rồi dán liên kết gọi lại vào đây.",
+    "Failed to start OAuth login": "Không thể bắt đầu đăng nhập OAuth",
+    "OAuth login failed": "Đăng nhập OAuth thất bại",
+    "OAuth login succeeded": "Đăng nhập OAuth thành công",
+    "Logged in as {{name}}.": "Đã đăng nhập với tư cách {{name}}.",
+    "The credential JSON has been generated, including the coding plan API key.": "JSON thông tin xác thực đã được tạo, bao gồm khóa API của Coding Plan.",
+    "Fill credential into key field": "Điền thông tin xác thực vào trường khóa",
+    "Step 1: Open the authorize URL and log in": "Bước 1: Mở liên kết cấp quyền và đăng nhập",
+    "Generating authorize URL...": "Đang tạo liên kết cấp quyền...",
+    "Open authorize page": "Mở trang cấp quyền",
+    "Step 2: Paste the callback link": "Bước 2: Dán liên kết gọi lại",
+    "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "Sau khi đăng nhập, trình duyệt sẽ được chuyển đến liên kết zcode:// và hệ thống có thể hỏi có mở ZCode hay không — hãy hủy, rồi sao chép toàn bộ liên kết từ thanh địa chỉ và dán xuống dưới.",
+    "Exchanging...": "Đang trao đổi...",
+    "Complete login": "Hoàn tất đăng nhập",
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "Tuyên bố miễn trừ: Chỉ dùng cho mục đích cá nhân. Không phân phối hay chia sẻ bất kỳ thông tin xác thực nào. Kênh này chuyển tiếp gói đăng ký BigModel Coding Plan của bạn; chỉ sử dụng khi bạn hiểu quy trình và rủi ro, đồng thời tuân thủ các điều khoản và chính sách của Zhipu."
   }
 }

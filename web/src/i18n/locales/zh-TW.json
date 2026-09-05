@@ -5555,6 +5555,27 @@
     "Zhipu Coding Plan Account Info": "智譜 Coding Plan 帳號資訊",
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "智譜 Coding Plan 憑據必須包含 api_key、account_username 和 account_password",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "BigModel Subscription channels do not support batch creation": "BigModel 訂閱渠道不支援批量建立",
+    "BigModel Subscription credential must be the JSON produced by OAuth login (api_key and access_token required)": "BigModel 訂閱憑證必須是透過 OAuth 登入產生的 JSON（需包含 api_key 和 access_token）",
+    "BigModel Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it.": "BigModel 訂閱渠道使用 OAuth 憑證作為金鑰，請透過 OAuth 登入取得。",
+    "OAuth login": "OAuth 登入",
+    "BigModel OAuth login": "BigModel OAuth 登入",
+    "BigModel Subscription (Coding Plan)": "智譜（Coding Plan）",
+    "Log in on bigmodel.cn in your browser, then paste the callback link back here.": "在瀏覽器中登入 bigmodel.cn，然後把回呼連結貼到這裡。",
+    "Failed to start OAuth login": "發起 OAuth 登入失敗",
+    "OAuth login failed": "OAuth 登入失敗",
+    "OAuth login succeeded": "OAuth 登入成功",
+    "Logged in as {{name}}.": "已登入為 {{name}}。",
+    "The credential JSON has been generated, including the coding plan API key.": "憑證 JSON 已產生，其中包含 Coding Plan API 金鑰。",
+    "Fill credential into key field": "將憑證填入金鑰欄位",
+    "Step 1: Open the authorize URL and log in": "第一步：開啟授權連結並登入",
+    "Generating authorize URL...": "正在產生授權連結…",
+    "Open authorize page": "開啟授權頁面",
+    "Step 2: Paste the callback link": "第二步：貼上回呼連結",
+    "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "登入後瀏覽器會跳轉到一個 zcode:// 連結，系統可能詢問是否開啟 ZCode——點取消，然後從網址列複製完整連結貼到下面。",
+    "Exchanging...": "交換中…",
+    "Complete login": "完成登入",
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "免責聲明：僅供個人使用。請勿分發或共享任何憑證。此渠道中繼你的 BigModel Coding Plan 訂閱；請僅在了解流程與風險並遵守智譜條款與政策的前提下使用。"
   }
 }

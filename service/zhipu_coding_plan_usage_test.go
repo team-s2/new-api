@@ -56,3 +56,36 @@ func TestFetchZhipuCodingPlanUsageRejectsEmptyLoginResponse(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty upstream response")
 }
+
+func TestFetchZhipuCodingPlanUsageWithTokenQueriesWithoutLogin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/auth/login":
+			t.Fatalf("token-based usage fetch must not log in, got %s", request.URL.Path)
+		case "/api/biz/customer/getCustomerInfo":
+			assert.Equal(t, "oauth-token", request.Header.Get("Authorization"))
+			_, _ = writer.Write([]byte(`{"success":true,"data":{"organizations":[{"organizationId":"org-default","isDefault":true,"projects":[{"projectId":"project-default","isDefault":true}]}]}}`))
+		case "/api/monitor/usage/quota/limit":
+			_, _ = writer.Write([]byte(`{"success":true,"data":{"level":"max","limits":[{"type":"TOKENS_LIMIT","unit":3,"number":5,"percentage":10}]}}`))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	usage, err := fetchZhipuCodingPlanUsageWithToken(context.Background(), server.Client(), server.URL, "oauth-token")
+	require.NoError(t, err)
+	require.NotNil(t, usage.FiveHour)
+	assert.Equal(t, 10, usage.FiveHour.Percentage)
+}
+
+func TestFetchZhipuCodingPlanUsageWithTokenReportsExpiredOAuthToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	_, err := fetchZhipuCodingPlanUsageWithToken(context.Background(), server.Client(), server.URL, "stale-token")
+	require.ErrorIs(t, err, ErrZhipuOAuthTokenExpired)
+}

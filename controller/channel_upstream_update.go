@@ -366,7 +366,7 @@ func getUpstreamModelsURL(channelType int, baseURL string) string {
 	switch channelType {
 	case constant.ChannelTypeAli:
 		return fmt.Sprintf("%s/compatible-mode/v1/models", baseURL)
-	case constant.ChannelTypeZhipu_v4:
+	case constant.ChannelTypeZhipu_v4, constant.ChannelTypeBigModelSub:
 		if plan, ok := constant.ChannelSpecialBases[baseURL]; ok && plan.OpenAIBaseURL != "" {
 			return fmt.Sprintf("%s/models", plan.OpenAIBaseURL)
 		}

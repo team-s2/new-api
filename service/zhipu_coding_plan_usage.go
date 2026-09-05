@@ -12,8 +12,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-const zhipuConsoleBaseURL = "https://open.bigmodel.cn"
-
 type ZhipuCodingPlanUsage struct {
 	Level      string                     `json:"level,omitempty"`
 	FiveHour   *ZhipuCodingPlanUsageLimit `json:"five_hour,omitempty"`
@@ -82,8 +80,20 @@ type zhipuQuotaUsageDetail struct {
 	Usage     int64  `json:"usage"`
 }
 
+// ErrZhipuOAuthTokenExpired marks an OAuth access token that the console API
+// rejected. There is no refresh path: upstream does not expose a refresh
+// endpoint (the official ZCode client asks users to log in again), so the
+// remedy is always to re-run the channel's OAuth login.
+var ErrZhipuOAuthTokenExpired = errors.New("zhipu coding plan: OAuth access token expired, please run OAuth login again")
+
 func FetchZhipuCodingPlanUsage(ctx context.Context, client *http.Client, username string, password string) (*ZhipuCodingPlanUsage, error) {
 	return fetchZhipuCodingPlanUsage(ctx, client, zhipuConsoleBaseURL, username, password)
+}
+
+// FetchZhipuCodingPlanUsageWithToken queries subscription usage with a bigmodel
+// console access token obtained via the channel's OAuth login.
+func FetchZhipuCodingPlanUsageWithToken(ctx context.Context, client *http.Client, accessToken string) (*ZhipuCodingPlanUsage, error) {
+	return fetchZhipuCodingPlanUsageWithToken(ctx, client, zhipuConsoleBaseURL, accessToken)
 }
 
 func fetchZhipuCodingPlanUsage(ctx context.Context, client *http.Client, baseURL string, username string, password string) (*ZhipuCodingPlanUsage, error) {
@@ -118,9 +128,28 @@ func fetchZhipuCodingPlanUsage(ctx context.Context, client *http.Client, baseURL
 		return nil, fmt.Errorf("zhipu coding plan login failed: %s", zhipuMessage(login.Msg))
 	}
 
+	return fetchZhipuCodingPlanUsageWithToken(ctx, client, baseURL, accessToken)
+}
+
+func fetchZhipuCodingPlanUsageWithToken(ctx context.Context, client *http.Client, baseURL string, accessToken string) (*ZhipuCodingPlanUsage, error) {
+	if client == nil {
+		return nil, errors.New("zhipu coding plan: nil http client")
+	}
+	accessToken = strings.TrimSpace(accessToken)
+	if accessToken == "" {
+		return nil, errors.New("zhipu coding plan: access token is required")
+	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if baseURL == "" {
+		return nil, errors.New("zhipu coding plan: empty console base url")
+	}
+
 	headers := map[string]string{"Authorization": accessToken}
 	var customer zhipuResponse[zhipuCustomerInfo]
 	if err := doZhipuConsoleRequest(ctx, client, http.MethodGet, baseURL+"/api/biz/customer/getCustomerInfo", nil, headers, &customer); err != nil {
+		if isZhipuConsoleUnauthorized(err) {
+			return nil, ErrZhipuOAuthTokenExpired
+		}
 		return nil, fmt.Errorf("zhipu coding plan account discovery failed: %w", err)
 	}
 	if !customer.Success {
@@ -169,6 +198,19 @@ func fetchZhipuCodingPlanUsage(ctx context.Context, client *http.Client, baseURL
 	return usage, nil
 }
 
+type zhipuConsoleStatusError struct {
+	status int
+}
+
+func (e *zhipuConsoleStatusError) Error() string {
+	return fmt.Sprintf("upstream status %d", e.status)
+}
+
+func isZhipuConsoleUnauthorized(err error) bool {
+	var statusErr *zhipuConsoleStatusError
+	return errors.As(err, &statusErr) && (statusErr.status == http.StatusUnauthorized || statusErr.status == http.StatusForbidden)
+}
+
 func doZhipuConsoleRequest[T any](ctx context.Context, client *http.Client, method string, url string, body []byte, headers map[string]string, target *zhipuResponse[T]) error {
 	request, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
@@ -194,7 +236,7 @@ func doZhipuConsoleRequest[T any](ctx context.Context, client *http.Client, meth
 		return err
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("upstream status %d", response.StatusCode)
+		return &zhipuConsoleStatusError{status: response.StatusCode}
 	}
 	if len(bytes.TrimSpace(responseBody)) == 0 {
 		return errors.New("empty upstream response")

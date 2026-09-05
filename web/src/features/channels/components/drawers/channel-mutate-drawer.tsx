@@ -180,6 +180,10 @@ import {
 import type { Channel } from '../../types'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
+import {
+  BigModelOAuthControls,
+  BigModelOAuthLoginDialog,
+} from '../dialogs/bigmodel-oauth-login-dialog'
 import { FetchModelsDialog } from '../dialogs/fetch-models-dialog'
 import {
   MissingModelsConfirmationDialog,
@@ -638,6 +642,7 @@ export function ChannelMutateDrawer({
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
   const [statusCodeRiskOpen, setStatusCodeRiskOpen] = useState(false)
+  const [bigModelOAuthOpen, setBigModelOAuthOpen] = useState(false)
   const [statusCodeRiskDetailItems, setStatusCodeRiskDetailItems] = useState<
     string[]
   >([])
@@ -3232,6 +3237,11 @@ export function ChannelMutateDrawer({
                                 </div>
                               )}
 
+                              <BigModelOAuthControls
+                                channelType={currentType}
+                                onLogin={() => setBigModelOAuthOpen(true)}
+                              />
+
                               {isEditing && isMultiKeyChannel && (
                                 <FormField
                                   control={form.control}
@@ -4927,6 +4937,14 @@ export function ChannelMutateDrawer({
       )}
 
       {/* Fetch Models Dialog */}
+      <BigModelOAuthLoginDialog
+        open={bigModelOAuthOpen}
+        onOpenChange={setBigModelOAuthOpen}
+        onApply={(credential) =>
+          form.setValue('key', credential, { shouldValidate: true })
+        }
+      />
+
       <FetchModelsDialog
         open={fetchModelsDialogOpen}
         onOpenChange={setFetchModelsDialogOpen}

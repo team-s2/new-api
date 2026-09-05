@@ -61,7 +61,11 @@ import {
   updateChannelBalance,
   type ZhipuCodingPlanUsageResponse,
 } from '../api'
-import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
+import {
+  CHANNEL_TYPE_BIGMODEL_SUB,
+  CHANNEL_STATUS_CONFIG,
+  MODEL_FETCHABLE_TYPES,
+} from '../constants'
 import {
   formatRelativeTime,
   formatResponseTime,
@@ -351,7 +355,8 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const [zhipuUsageResponse, setZhipuUsageResponse] =
     useState<ZhipuCodingPlanUsageResponse | null>(null)
   const isZhipuCodingPlan =
-    channel.type === 26 && channel.base_url === 'glm-coding-plan'
+    channel.type === CHANNEL_TYPE_BIGMODEL_SUB ||
+    (channel.type === 26 && channel.base_url === 'glm-coding-plan')
   const isAccountInfoChannel = channel.type === 57 || isZhipuCodingPlan
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''

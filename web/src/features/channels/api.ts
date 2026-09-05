@@ -396,6 +396,45 @@ export async function getZhipuCodingPlanUsage(
   return res.data
 }
 
+export interface ZhipuOAuthLoginResponse {
+  success: boolean
+  message?: string
+  data?: {
+    authorize_url: string
+    state: string
+  }
+}
+
+export interface ZhipuOAuthExchangeResponse {
+  success: boolean
+  message?: string
+  data?: {
+    credential: string
+    username: string
+  }
+}
+
+export async function startZhipuOAuthLogin(): Promise<ZhipuOAuthLoginResponse> {
+  const res = await api.post(
+    '/api/channel/zhipu/oauth/login',
+    {},
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+export async function exchangeZhipuOAuthToken(
+  input: string,
+  state: string
+): Promise<ZhipuOAuthExchangeResponse> {
+  const res = await api.post(
+    '/api/channel/zhipu/oauth/exchange',
+    { input, state },
+    channelActionConfig()
+  )
+  return res.data
+}
+
 // ============================================================================
 // Multi-Key Management
 // ============================================================================

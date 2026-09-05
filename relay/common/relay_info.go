@@ -372,6 +372,7 @@ var streamSupportedChannels = map[int]bool{
 	constant.ChannelTypeDeepSeek:       true,
 	constant.ChannelTypeBaiduV2:        true,
 	constant.ChannelTypeZhipu_v4:       true,
+	constant.ChannelTypeBigModelSub:    true,
 	constant.ChannelTypeAli:            true,
 	constant.ChannelTypeSubmodel:       true,
 	constant.ChannelTypeCodex:          true,

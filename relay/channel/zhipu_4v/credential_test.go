@@ -61,3 +61,54 @@ func TestSetupRequestHeaderUsesOnlyCodingPlanAPIKey(t *testing.T) {
 	assert.Equal(t, "Bearer coding-key", headers.Get("Authorization"))
 	assert.NotContains(t, headers.Get("Authorization"), "password")
 }
+
+func TestParseOAuthCredential(t *testing.T) {
+	cases := []struct {
+		name      string
+		raw       string
+		expected  *OAuthCredential
+		wantError string
+	}{
+		{
+			name: "full credential",
+			raw:  `{"api_key":"id.secret","access_token":"token","refresh_token":"refresh","oauth_username":"Alice"}`,
+			expected: &OAuthCredential{APIKey: "id.secret", AccessToken: "token", RefreshToken: "refresh", OAuthUser: "Alice"},
+		},
+		{
+			name:      "without refresh token",
+			raw:       `{"api_key":"id.secret","access_token":"token"}`,
+			expected:  &OAuthCredential{APIKey: "id.secret", AccessToken: "token"},
+		},
+		{
+			name:      "missing api_key",
+			raw:       `{"access_token":"token"}`,
+			wantError: "missing api_key",
+		},
+		{
+			name:      "missing access_token",
+			raw:       `{"api_key":"id.secret"}`,
+			wantError: "missing access_token",
+		},
+		{
+			name:      "not json",
+			raw:       "id.secret",
+			wantError: "JSON produced by OAuth login",
+		},
+		{
+			name:      "empty",
+			raw:       "  ",
+			wantError: "empty credential",
+		},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			credential, err := ParseOAuthCredential(testCase.raw)
+			if testCase.wantError != "" {
+				require.ErrorContains(t, err, testCase.wantError)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, testCase.expected, credential)
+		})
+	}
+}
