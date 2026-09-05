@@ -20,6 +20,7 @@ import { describe, expect, test } from 'vitest'
 
 import {
   CHANNEL_TYPE_OPTIONS,
+  MODEL_FETCHABLE_TYPES,
   channelTypeOptionsForTaskPluginBind,
 } from '../../constants'
 import {
@@ -53,6 +54,7 @@ describe('BigModel Coding Plan channel identity', () => {
         (option) => option.value === 62
       )
     ).toBe(true)
+    expect(MODEL_FETCHABLE_TYPES.has(62)).toBe(true)
     expect(getChannelTypeIcon(62)).toBe('Zhipu')
     expect(getKeyPromptForType(62)).toContain('OAuth')
   })

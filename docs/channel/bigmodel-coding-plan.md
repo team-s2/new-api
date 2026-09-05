@@ -2,6 +2,8 @@
 
 本 fork 的 `BigModel Subscription (Coding Plan)` 渠道使用类型 **62**，通过 OAuth 登录取得包含 `api_key` 和 `access_token` 的 JSON 凭据。`api_key` 用于模型调用，`access_token` 用于订阅用量查询。普通智谱 V4 渠道（类型 26）配合 `glm-coding-plan` 地址仍是独立的接入方式。
 
+支持“从上游获取”模型列表和上游模型更新检查。默认通过 `GET https://open.bigmodel.cn/api/coding/paas/v4/models` 获取，使用 OAuth 凭据中的 `api_key` 进行 Bearer 认证；无需手动填写协议端点或将整段凭据作为请求头发送。
+
 ## 类型编号兼容性
 
 类型 **61** 属于上游 Task Plugin，不能重用。前后端新增 Coding Plan 功能时应分别使用 `ChannelTypeBigModelSub` 和 `CHANNEL_TYPE_BIGMODEL_SUB`，避免显示名称、OAuth 控件、凭据校验、订阅用量和实际中继使用不同编号。
