@@ -2,11 +2,14 @@ package openai
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -264,4 +267,100 @@ func TestOaiResponsesStreamHandlerDoesNotCountPartialImageEvent(t *testing.T) {
 	)
 
 	assert.Equal(t, 0, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+}
+
+// 在发送终态后立即取消请求，模拟 Codex 停止读取 SSE 的行为。
+type responsesDisconnectWriter struct {
+	*httptest.ResponseRecorder
+	cancel   context.CancelFunc
+	writeErr error
+}
+
+func (w *responsesDisconnectWriter) Write(data []byte) (int, error) {
+	if w.writeErr != nil {
+		return 0, w.writeErr
+	}
+	return w.ResponseRecorder.Write(data)
+}
+
+func (w *responsesDisconnectWriter) Flush() {
+	w.ResponseRecorder.Flush()
+	if w.cancel != nil {
+		w.cancel()
+	}
+}
+
+func TestResponsesStreamTerminalEvents(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	for _, tc := range []struct {
+		name, event, status      string
+		cancelOnFlush, failWrite bool
+		wantNormal, wantUsage    bool
+	}{
+		{"completed_client_closes", "response.completed", "completed", true, false, true, true},
+		{"done_client_closes", "response.done", "completed", true, false, true, true},
+		{"completed_upstream_stays_open", "response.completed", "completed", false, false, true, true},
+		{"completed_write_fails", "response.completed", "completed", false, true, false, true},
+		{"failed_terminal", "response.failed", "failed", false, false, false, false},
+		{"incomplete_terminal", "response.incomplete", "incomplete", false, false, false, false},
+		{"cancelled_terminal", "response.cancelled", "cancelled", false, false, false, false},
+		{"canceled_terminal", "response.canceled", "canceled", false, false, false, false},
+		{"done_failed_status", "response.done", "failed", false, false, false, true},
+		{"client_aborts_before_completion", "response.created", "in_progress", true, false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			recorder := httptest.NewRecorder()
+			writer := &responsesDisconnectWriter{ResponseRecorder: recorder}
+			if tc.cancelOnFlush {
+				writer.cancel = cancel
+			}
+			if tc.failWrite {
+				writer.writeErr = errors.New("downstream write failed")
+			}
+			c, _ := gin.CreateTestContext(writer)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(ctx)
+			reader, pipeWriter := io.Pipe()
+			defer pipeWriter.Close()
+			payload, err := common.Marshal(map[string]any{
+				"type": tc.event,
+				"response": map[string]any{"status": tc.status, "output": []any{}, "usage": map[string]any{
+					"input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+					"input_tokens_details": map[string]any{"cached_tokens": 64},
+				}},
+			})
+			require.NoError(t, err)
+			sent := make(chan error, 1)
+			go func() {
+				_, err := pipeWriter.Write(append(append([]byte("data: "), payload...), '\n', '\n'))
+				sent <- err
+			}()
+			info := &relaycommon.RelayInfo{DisablePing: true, OriginModelName: "gpt-6-astra", ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-6-astra"}}
+			usage, apiErr := OaiResponsesStreamHandler(c, info, &http.Response{StatusCode: 200, Header: http.Header{}, Body: reader})
+			require.NoError(t, <-sent)
+			require.Nil(t, apiErr)
+			require.NotNil(t, info.StreamStatus)
+			assert.NotEqual(t, context.DeadlineExceeded, ctx.Err(), "handler must stop at terminal event without waiting for EOF")
+			assert.Equal(t, tc.wantNormal, info.StreamStatus.IsNormalEnd() && !info.StreamStatus.HasErrors())
+			if tc.wantNormal {
+				assert.Equal(t, relaycommon.StreamEndReasonDone, info.StreamStatus.EndReason)
+			}
+			if tc.wantUsage {
+				assert.Equal(t, 100, usage.PromptTokens)
+				assert.Equal(t, 20, usage.CompletionTokens)
+				assert.Equal(t, 64, usage.PromptTokensDetails.CachedTokens)
+			}
+			if tc.failWrite {
+				assert.True(t, info.StreamStatus.HasErrors())
+			} else {
+				assert.Contains(t, recorder.Body.String(), "event: "+tc.event+"\ndata: ")
+			}
+			if tc.event == "response.created" {
+				assert.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.EndReason)
+			}
+		})
+	}
 }

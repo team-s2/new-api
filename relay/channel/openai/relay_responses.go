@@ -86,9 +86,13 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 			sr.Error(err)
 			return
 		}
-		sendResponsesStreamData(c, streamResponse, data)
+		terminal := false
 		switch streamResponse.Type {
 		case "response.completed", "response.done":
+			terminal = true
+			if streamResponse.Response != nil && relaycommon.IsNonBillableResponsesStatus(streamResponse.Response.Status) {
+				sr.Stop(fmt.Errorf("responses stream ended with status %s", streamResponse.Response.Status))
+			}
 			if streamResponse.Response != nil {
 				if streamResponse.Response.Usage != nil {
 					incomingUsage := relayconvert.NormalizeResponsesUsage(streamResponse.Response.Usage)
@@ -113,6 +117,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 				imageCommitted = true
 			}
 		case "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
+			sr.Stop(fmt.Errorf("responses stream ended with event %s", streamResponse.Type))
 			if !imageCommitted {
 				imageCounter.Reset()
 				imageCounter.Commit(info)
@@ -136,6 +141,14 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 					}
 				}
 			}
+		}
+		// 先保存上游 usage，再写客户端；写失败也不能丢失已产生的计费数据。
+		if err := helper.ResponseChunkData(c, streamResponse, data); err != nil {
+			sr.Stop(err)
+			return
+		}
+		if terminal && !sr.IsStopped() {
+			sr.Done()
 		}
 	})
 
