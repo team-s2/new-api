@@ -20,6 +20,7 @@ import { formatCurrencyFromUSD, formatQuotaWithCurrency } from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
 
 import {
+  CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPES,
   MULTI_KEY_STATUS_CONFIG,
@@ -75,6 +76,7 @@ export function getChannelTypeIcon(type: number): string {
     46: 'Baidu', // Baidu V2
     16: 'Zhipu', // Zhipu
     26: 'Zhipu', // Zhipu V4
+    [CHANNEL_TYPE_BIGMODEL_SUB]: 'Zhipu', // BigModel Subscription (Coding Plan)
     17: 'Qwen', // Ali
     18: 'Spark', // Xunfei
     23: 'Hunyuan', // Tencent

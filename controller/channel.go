@@ -18,6 +18,7 @@ import (
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
@@ -285,6 +286,11 @@ func GetAllChannels(c *gin.Context) {
 }
 
 func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, error) {
+	key, err := normalizeFetchModelsKey(channel.Type, channel.GetBaseURL(), key)
+	if err != nil {
+		return nil, err
+	}
+
 	var headers http.Header
 	switch channel.Type {
 	case constant.ChannelTypeAnthropic:
@@ -316,6 +322,22 @@ func applyFetchModelsHeaderOverrides(channel *model.Channel, key string, headers
 	}
 
 	return nil
+}
+
+func normalizeFetchModelsKey(channelType int, baseURL string, key string) (string, error) {
+	key = strings.TrimSpace(key)
+	if channelType != constant.ChannelTypeZhipu_v4 && channelType != constant.ChannelTypeBigModelSub {
+		return key, nil
+	}
+	if _, ok := constant.ChannelSpecialBases[baseURL]; !ok {
+		return key, nil
+	}
+
+	credential, err := zhipu_4v.ParseCodingPlanCredential(key)
+	if err != nil {
+		return "", err
+	}
+	return credential.APIKey, nil
 }
 
 func FetchUpstreamModels(c *gin.Context) {
@@ -657,6 +679,33 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 			}
 			if v, ok := keyMap["account_id"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
 				return fmt.Errorf("Codex key JSON must include account_id")
+			}
+		}
+	}
+
+	// BigModel Subscription (Coding Plan) key is always the JSON produced by
+	// the OAuth login helper.
+	if channel.Type == constant.ChannelTypeBigModelSub {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if isAdd || trimmedKey != "" {
+			if !strings.HasPrefix(trimmedKey, "{") {
+				return fmt.Errorf("BigModel Subscription key must be the JSON credential produced by OAuth login")
+			}
+			if _, err := zhipu_4v.ParseOAuthCredential(trimmedKey); err != nil {
+				return err
+			}
+		}
+	}
+
+	if channel.Type == constant.ChannelTypeZhipu_v4 && strings.TrimSpace(channel.GetBaseURL()) == "glm-coding-plan" {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if strings.HasPrefix(trimmedKey, "{") {
+			credential, err := zhipu_4v.ParseCodingPlanCredential(trimmedKey)
+			if err != nil {
+				return err
+			}
+			if credential.AccountUsername == "" || credential.AccountPassword == "" {
+				return fmt.Errorf("Zhipu Coding Plan credential JSON must include account_username and account_password")
 			}
 		}
 	}
@@ -1485,7 +1534,18 @@ func FetchModels(c *gin.Context) {
 			baseURL = constant.GetChannelBaseURL(req.Type)
 		}
 
+		// Remove extra spaces and select the first key for batch input. Coding Plan
+		// credentials must be parsed before splitting because their JSON may span
+		// multiple lines.
 		key := strings.TrimSpace(req.Key)
+		key, err := normalizeFetchModelsKey(req.Type, baseURL, key)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 		if req.Type != constant.ChannelTypeCodex {
 			key = strings.Split(key, "\n")[0]
 		}
