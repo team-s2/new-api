@@ -62,6 +62,10 @@ func decodeFlowQuotaResponse(t *testing.T, recorder *httptest.ResponseRecorder) 
 }
 
 func TestGetAllFlowQuotaDatesUsesAdminDimensions(t *testing.T) {
+	// These tests exercise the quota_data path; pin the direct-logs threshold off.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 	setupFlowControllerTestDB(t)
 
 	recorder := httptest.NewRecorder()
@@ -81,6 +85,10 @@ func TestGetAllFlowQuotaDatesUsesAdminDimensions(t *testing.T) {
 }
 
 func TestGetAllFlowQuotaDatesUsesRootDimensions(t *testing.T) {
+	// These tests exercise the quota_data path; pin the direct-logs threshold off.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 	setupFlowControllerTestDB(t)
 
 	recorder := httptest.NewRecorder()
@@ -100,6 +108,10 @@ func TestGetAllFlowQuotaDatesUsesRootDimensions(t *testing.T) {
 }
 
 func TestGetUserFlowQuotaDatesRestrictsToAuthenticatedUser(t *testing.T) {
+	// These tests exercise the quota_data path; pin the direct-logs threshold off.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 	setupFlowControllerTestDB(t)
 
 	recorder := httptest.NewRecorder()

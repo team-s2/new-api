@@ -24,6 +24,11 @@ func seedFlowLookupData(t *testing.T) {
 func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 	truncateTables(t)
 	seedFlowLookupData(t)
+	// This test exercises the quota_data path, which now only serves windows
+	// longer than FlowDirectLogsWindowSeconds.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 
 	seedFlowQuotaData(t, QuotaData{
 		UserID:    1,

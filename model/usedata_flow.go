@@ -23,6 +23,9 @@ type FlowQuotaData struct {
 }
 
 func GetFlowQuotaData(startTime int64, endTime int64, username string, userID int, role int) ([]*FlowQuotaData, error) {
+	if flowUsesDirectLogs(startTime, endTime) {
+		return getFlowQuotaDataFromLogs(startTime, endTime, username, userID, role)
+	}
 	switch {
 	case role >= common.RoleRootUser:
 		return getRootFlowQuotaData(startTime, endTime, username)
@@ -80,6 +83,87 @@ func getRootFlowQuotaData(startTime int64, endTime int64, username string) ([]*F
 	}
 	err := query.
 		Group("user_id, username, node_name, token_id, use_group, model_name, channel_id").
+		Order("quota DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if err := fillFlowTokenNames(rows); err != nil {
+		return rows, err
+	}
+	return rows, fillFlowChannelNames(rows)
+}
+
+
+// flowUsesDirectLogs reports whether the window is short enough to aggregate
+// the per-request logs directly. quota_data rows are truncated to whole
+// hours, so a sub-hour window either matches no bucket (empty result) or
+// swallows full hours (over-counting); the logs path is exact for any range
+// and also immune to the periodic quota_data export flush lag. Log rows do
+// not carry node_name, so that dimension stays empty on this path.
+func flowUsesDirectLogs(startTime int64, endTime int64) bool {
+	return common.FlowDirectLogsWindowSeconds > 0 &&
+		endTime-startTime <= int64(common.FlowDirectLogsWindowSeconds)
+}
+
+func getFlowQuotaDataFromLogs(startTime int64, endTime int64, username string, userID int, role int) ([]*FlowQuotaData, error) {
+	switch {
+	case role >= common.RoleRootUser:
+		return getRootFlowQuotaDataFromLogs(startTime, endTime, username)
+	case role >= common.RoleAdminUser:
+		return getAdminFlowQuotaDataFromLogs(startTime, endTime, username)
+	default:
+		return getSelfFlowQuotaDataFromLogs(startTime, endTime, userID)
+	}
+}
+
+func flowLogsBaseQuery(startTime int64, endTime int64) *gorm.DB {
+	return LOG_DB.Table("logs").
+		Where("type = ?", LogTypeConsume).
+		Where(logGroupCol+" <> ''").
+		Where("created_at >= ? and created_at <= ?", startTime, endTime)
+}
+
+func getSelfFlowQuotaDataFromLogs(startTime int64, endTime int64, userID int) ([]*FlowQuotaData, error) {
+	rows := make([]*FlowQuotaData, 0)
+	err := flowLogsBaseQuery(startTime, endTime).
+		Select("token_id, " + logGroupCol + " as use_group, model_name, count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used").
+		Where("user_id = ?", userID).
+		Group("token_id, " + logGroupCol + ", model_name").
+		Order("quota DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, fillFlowTokenNames(rows)
+}
+
+func getAdminFlowQuotaDataFromLogs(startTime int64, endTime int64, username string) ([]*FlowQuotaData, error) {
+	rows := make([]*FlowQuotaData, 0)
+	query := flowLogsBaseQuery(startTime, endTime).
+		Select("user_id, username, " + logGroupCol + " as use_group, model_name, channel_id, count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used")
+	if username != "" {
+		query = query.Where("username = ?", username)
+	}
+	err := query.
+		Group("user_id, username, " + logGroupCol + ", model_name, channel_id").
+		Order("quota DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	return rows, fillFlowChannelNames(rows)
+}
+
+func getRootFlowQuotaDataFromLogs(startTime int64, endTime int64, username string) ([]*FlowQuotaData, error) {
+	rows := make([]*FlowQuotaData, 0)
+	query := flowLogsBaseQuery(startTime, endTime).
+		Select("user_id, username, token_id, " + logGroupCol + " as use_group, model_name, channel_id, count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used")
+	if username != "" {
+		query = query.Where("username = ?", username)
+	}
+	err := query.
+		Group("user_id, username, token_id, " + logGroupCol + ", model_name, channel_id").
 		Order("quota DESC").
 		Find(&rows).Error
 	if err != nil {
