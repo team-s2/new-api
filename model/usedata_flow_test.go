@@ -24,6 +24,11 @@ func seedFlowLookupData(t *testing.T) {
 func TestGetFlowQuotaDataUsesQuotaDataRoleSpecificDimensions(t *testing.T) {
 	truncateTables(t)
 	seedFlowLookupData(t)
+	// This test exercises the quota_data path, which now only serves windows
+	// longer than FlowDirectLogsWindowSeconds.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 
 	seedFlowQuotaData(t, QuotaData{
 		UserID:    1,
@@ -190,4 +195,83 @@ func TestLogQuotaDataSplitsRowsByUseGroupTokenChannelAndNode(t *testing.T) {
 	require.Equal(t, 60, rows[0].TokenUsed)
 	require.Equal(t, "default", rows[1].UseGroup)
 	require.Equal(t, 25, rows[1].Quota)
+}
+
+func seedFlowLog(t *testing.T, log Log) {
+	t.Helper()
+	require.NoError(t, LOG_DB.Create(&log).Error)
+}
+
+func TestGetFlowQuotaDataShortWindowAggregatesLogsDirectly(t *testing.T) {
+	truncateTables(t)
+	seedFlowLookupData(t)
+
+	// 20-minute window [1000, 2200]. quota_data buckets are hour-truncated, so
+	// only the direct logs path can resolve this range.
+	const start, end = int64(1000), int64(2200)
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeConsume, ModelName: "gpt-a", Quota: 60, PromptTokens: 10, CompletionTokens: 2, ChannelId: 1, TokenId: 11, Group: "vip", CreatedAt: 1100})
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeConsume, ModelName: "gpt-a", Quota: 40, PromptTokens: 5, CompletionTokens: 5, ChannelId: 1, TokenId: 11, Group: "vip", CreatedAt: 2100})
+	// Outside the window on both ends: must not be counted.
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeConsume, ModelName: "gpt-a", Quota: 999, ChannelId: 1, TokenId: 11, Group: "vip", CreatedAt: 900})
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeConsume, ModelName: "gpt-a", Quota: 999, ChannelId: 1, TokenId: 11, Group: "vip", CreatedAt: 2201})
+	// Wrong type and empty group: must not be counted.
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeTopup, ModelName: "gpt-a", Quota: 999, ChannelId: 1, TokenId: 11, Group: "vip", CreatedAt: 1200})
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeConsume, ModelName: "gpt-b", Quota: 999, ChannelId: 2, TokenId: 22, Group: "", CreatedAt: 1300})
+	// Another user only visible to admin/root views.
+	seedFlowLog(t, Log{UserId: 2, Username: "bob", Type: LogTypeConsume, ModelName: "gpt-b", Quota: 25, PromptTokens: 3, CompletionTokens: 3, ChannelId: 2, TokenId: 22, Group: "vip", CreatedAt: 1400})
+
+	rootRows, err := GetFlowQuotaData(start, end, "", 0, common.RoleRootUser)
+	require.NoError(t, err)
+	require.Len(t, rootRows, 2)
+	require.Equal(t, "alice", rootRows[0].Username)
+	require.Equal(t, "gpt-a", rootRows[0].ModelName)
+	require.Equal(t, "east", rootRows[0].ChannelName)
+	// Token 11 is soft-deleted in the fixture; names intentionally unresolved.
+	require.Equal(t, "", rootRows[0].TokenName)
+	require.Equal(t, "vip", rootRows[0].UseGroup)
+	require.Equal(t, 100, rootRows[0].Quota)
+	require.Equal(t, 2, rootRows[0].Count)
+	require.Equal(t, 22, rootRows[0].TokenUsed)
+	// Log rows do not carry node_name.
+	require.Empty(t, rootRows[0].NodeName)
+	require.Equal(t, 25, rootRows[1].Quota)
+
+	selfRows, err := GetFlowQuotaData(start, end, "", 1, common.RoleCommonUser)
+	require.NoError(t, err)
+	require.Len(t, selfRows, 1)
+	require.Equal(t, 100, selfRows[0].Quota)
+	require.Equal(t, 2, selfRows[0].Count)
+	require.Empty(t, selfRows[0].Username)
+
+	adminRows, err := GetFlowQuotaData(start, end, "bob", 0, common.RoleAdminUser)
+	require.NoError(t, err)
+	require.Len(t, adminRows, 1)
+	require.Equal(t, 25, adminRows[0].Quota)
+	require.Equal(t, "west", adminRows[0].ChannelName)
+}
+
+func TestGetFlowQuotaDataLongWindowStillUsesQuotaData(t *testing.T) {
+	truncateTables(t)
+	seedFlowLookupData(t)
+
+	seedFlowQuotaData(t, QuotaData{
+		UserID:    1,
+		Username:  "alice",
+		TokenID:   11,
+		UseGroup:  "vip",
+		ModelName: "gpt-a",
+		ChannelID: 1,
+		CreatedAt: 1000,
+		Count:     2,
+		Quota:     100,
+		TokenUsed: 40,
+	})
+	// A log row that must stay invisible: the window exceeds the threshold.
+	seedFlowLog(t, Log{UserId: 1, Username: "alice", Type: LogTypeConsume, ModelName: "gpt-a", Quota: 999, ChannelId: 1, TokenId: 11, Group: "vip", CreatedAt: 1500})
+
+	rootRows, err := GetFlowQuotaData(500, 500+int64(common.FlowDirectLogsWindowSeconds)+10, "", 0, common.RoleRootUser)
+	require.NoError(t, err)
+	require.Len(t, rootRows, 1)
+	require.Equal(t, 100, rootRows[0].Quota)
+	require.Equal(t, 2, rootRows[0].Count)
 }

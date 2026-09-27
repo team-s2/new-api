@@ -28,6 +28,11 @@ var TaskEnabled = true
 var DataExportEnabled = true
 var DataExportInterval = 5         // unit: minute
 var DataExportDefaultTime = "hour" // unit: minute
+
+// FlowDirectLogsWindowSeconds bounds how short a /api/data/flow window may be
+// to aggregate the per-request logs table directly instead of the
+// hour-truncated quota_data table. 0 disables the direct path.
+var FlowDirectLogsWindowSeconds = GetEnvOrDefault("FLOW_DIRECT_LOGS_WINDOW_SECONDS", 6*3600)
 var DefaultCollapseSidebar = false // default value of collapse sidebar
 
 // Any options with "Secret", "Token" in its key won't be return by GetOptions

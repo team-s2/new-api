@@ -62,6 +62,10 @@ func decodeFlowQuotaResponse(t *testing.T, recorder *httptest.ResponseRecorder) 
 }
 
 func TestGetAllFlowQuotaDatesUsesAdminDimensions(t *testing.T) {
+	// These tests exercise the quota_data path; pin the direct-logs threshold off.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 	setupFlowControllerTestDB(t)
 
 	recorder := httptest.NewRecorder()
@@ -81,6 +85,10 @@ func TestGetAllFlowQuotaDatesUsesAdminDimensions(t *testing.T) {
 }
 
 func TestGetAllFlowQuotaDatesUsesRootDimensions(t *testing.T) {
+	// These tests exercise the quota_data path; pin the direct-logs threshold off.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 	setupFlowControllerTestDB(t)
 
 	recorder := httptest.NewRecorder()
@@ -100,6 +108,10 @@ func TestGetAllFlowQuotaDatesUsesRootDimensions(t *testing.T) {
 }
 
 func TestGetUserFlowQuotaDatesRestrictsToAuthenticatedUser(t *testing.T) {
+	// These tests exercise the quota_data path; pin the direct-logs threshold off.
+	original := common.FlowDirectLogsWindowSeconds
+	common.FlowDirectLogsWindowSeconds = 0
+	t.Cleanup(func() { common.FlowDirectLogsWindowSeconds = original })
 	setupFlowControllerTestDB(t)
 
 	recorder := httptest.NewRecorder()
@@ -115,6 +127,19 @@ func TestGetUserFlowQuotaDatesRestrictsToAuthenticatedUser(t *testing.T) {
 	require.Equal(t, "primary", payload.Data[0].TokenName)
 	require.Equal(t, "default", payload.Data[0].UseGroup)
 	require.Empty(t, payload.Data[0].ChannelName)
+}
+
+func TestGetUserFlowQuotaDatesAllowsLongRanges(t *testing.T) {
+	setupFlowControllerTestDB(t)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Set("id", 1)
+	// 180 days: previously rejected with "时间跨度不能超过 1 个月".
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/data/flow/self?start_timestamp=1000&end_timestamp=15553001", nil)
+	GetUserFlowQuotaDates(ctx)
+	payload := decodeFlowQuotaResponse(t, recorder)
+	require.Empty(t, payload.Message)
 }
 
 func TestGetUserFlowQuotaDatesRejectsInvalidTimeRange(t *testing.T) {
