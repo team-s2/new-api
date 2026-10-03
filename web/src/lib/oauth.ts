@@ -40,7 +40,12 @@ export function indexCustomOAuthBindings(
  * Build GitHub OAuth URL
  */
 export function buildGitHubOAuthUrl(clientId: string, state: string): string {
-  return `https://github.com/login/oauth/authorize?client_id=${clientId}&state=${state}&scope=user:email`
+  const url = new URL('https://github.com/login/oauth/authorize')
+  url.searchParams.set('client_id', clientId)
+  url.searchParams.set('redirect_uri', `${window.location.origin}/oauth/github`)
+  url.searchParams.set('state', state)
+  url.searchParams.set('scope', 'user:email read:org')
+  return url.toString()
 }
 
 /**

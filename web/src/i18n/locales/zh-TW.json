@@ -6828,6 +6828,19 @@
     "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "登入後瀏覽器會跳轉到一個 zcode:// 連結，系統可能詢問是否開啟 ZCode——點取消，然後從網址列複製完整連結貼到下面。",
     "Exchanging...": "交換中…",
     "Complete login": "完成登入",
-    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "免責聲明：僅供個人使用。請勿分發或共享任何憑證。此渠道中繼你的 BigModel Coding Plan 訂閱；請僅在了解流程與風險並遵守智譜條款與政策的前提下使用。"
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "免責聲明：僅供個人使用。請勿分發或共享任何憑證。此渠道中繼你的 BigModel Coding Plan 訂閱；請僅在了解流程與風險並遵守智譜條款與政策的前提下使用。",
+    "Restrict GitHub sign-in": "限制 GitHub 登入",
+    "Only listed GitHub users or active members of any listed organization may sign in or link GitHub. Empty lists deny everyone. Other login methods are unaffected.": "僅允許指定 GitHub 使用者或任一指定組織的正式成員登入或綁定 GitHub。清單均為空時拒絕所有人，其他登入方式不受影響。",
+    "Allowed GitHub organizations": "允許的 GitHub 組織",
+    "Separate organization names with commas or newlines. Each organization may need to approve the OAuth app for read:org access.": "組織名稱以逗號或換行分隔。各組織可能需要核准 OAuth 應用程式的 read:org 存取權限。",
+    "Allowed GitHub user IDs": "允許的 GitHub 使用者 ID",
+    "Use permanent numeric account IDs, separated by commas or newlines. Find the id field at https://api.github.com/users/USERNAME. Usernames can be reassigned.": "使用永久數字帳號 ID，以逗號或換行分隔。可在 https://api.github.com/users/USERNAME 的 id 欄位查看。使用者名稱可能被重新分配。",
+    "Automatic GitHub role": "GitHub 自動授予角色",
+    "Keep existing role (new users are regular users)": "保留現有角色（新使用者為一般使用者）",
+    "Root (full access)": "超級管理員（完整權限）",
+    "Promote allowed users after successful GitHub login, including existing accounts. Higher roles are preserved. Disabling promotion does not revoke previously granted roles.": "GitHub 登入成功後提升允許使用者的角色，包括既有帳號。保留更高角色，關閉自動提升不會撤銷先前授予的角色。",
+    "Membership is checked at GitHub sign-in. Changes do not revoke existing sessions or access through other login methods. Revoke sessions and adjust roles separately when removing access.": "組織成員身分在 GitHub 登入時檢查。修改設定不會撤銷現有工作階段或其他登入方式的權限。移除存取權限時，請另外撤銷工作階段並調整角色。",
+    "Enter valid GitHub organization names (up to 100).": "請輸入有效的 GitHub 組織名稱（最多 100 個）。",
+    "Enter positive numeric GitHub account IDs (up to 1000).": "請輸入正整數 GitHub 帳號 ID（最多 1000 個）。"
   }
 }

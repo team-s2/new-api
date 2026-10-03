@@ -350,7 +350,7 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 	}
 
 	// 9. Setup login
-	setupLogin(user, migration, c)
+	setupLogin(user, migration, c, oauthUser.GitHubGrant)
 }
 
 // handleOAuthBind handles binding OAuth account to existing user
@@ -629,6 +629,10 @@ func (e *OAuthLegacyBindingNotConfirmedError) Error() string {
 func handleOAuthError(c *gin.Context, err error) {
 	switch e := err.(type) {
 	case *oauth.OAuthError:
+		if e.MsgKey == i18n.MsgGitHubAccessDenied || e.MsgKey == i18n.MsgGitHubAccessCheckFailed {
+			c.JSON(http.StatusForbidden, gin.H{"success": false, "message": i18n.T(c, e.MsgKey)})
+			return
+		}
 		if e.Params != nil {
 			common.ApiErrorI18n(c, e.MsgKey, e.Params)
 		} else {

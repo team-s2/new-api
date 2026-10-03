@@ -292,3 +292,6 @@ custom_oauth.name_empty: "提供商名称不能为空"
 custom_oauth.has_bindings: "无法删除已有用户绑定的提供商"
 custom_oauth.binding_not_found: "OAuth 绑定不存在"
 custom_oauth.provider_id_field_invalid: "无法从提供商响应中提取用户 ID"
+
+oauth.github_access_denied: "此 GitHub 账号不在允许登录的范围内。"
+oauth.github_access_check_failed: "无法验证 GitHub 登录权限，请检查组织授权后重试。"

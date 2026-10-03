@@ -27,8 +27,9 @@ type LegacyGitHubMigration struct {
 
 // loginFlowPayload stays comparable; completion compares it with the bound copy.
 type loginFlowPayload struct {
-	AuthVersion int64  `json:"auth_version"`
-	LoginMethod string `json:"login_method"`
+	GitHubGrant common.GitHubLoginGrant `json:"github_grant"`
+	AuthVersion int64                   `json:"auth_version"`
+	LoginMethod string                  `json:"login_method"`
 	// The GitHub binding rewrite waiting for this verification, if any.
 	PendingGitHubID       string `json:"pending_github_id,omitempty"`
 	PendingGitHubLegacyID string `json:"pending_github_legacy_id,omitempty"`
@@ -42,7 +43,7 @@ type LoginVerification struct {
 	payload loginFlowPayload
 }
 
-func StartLoginVerification(user *model.User, loginMethod string, migration *LegacyGitHubMigration) (*LoginChallenge, error) {
+func StartLoginVerification(user *model.User, loginMethod string, migration *LegacyGitHubMigration, grants ...*common.GitHubLoginGrant) (*LoginChallenge, error) {
 	if user == nil || user.Id <= 0 || user.AuthVersion <= 0 || loginMethod == "" {
 		return nil, model.ErrAuthFlowInvalid
 	}
@@ -72,6 +73,9 @@ func StartLoginVerification(user *model.User, loginMethod string, migration *Leg
 	payload := loginFlowPayload{AuthVersion: state.AuthVersion, LoginMethod: loginMethod}
 	if migration != nil {
 		payload.PendingGitHubID, payload.PendingGitHubLegacyID = migration.GitHubID, migration.LegacyID
+	}
+	if len(grants) > 0 && grants[0] != nil {
+		payload.GitHubGrant = *grants[0]
 	}
 	encoded, err := common.Marshal(payload)
 	if err != nil {
@@ -164,7 +168,17 @@ func CompleteLoginVerification(token string, verification *LoginVerification, me
 		if err := requireLoginVerificationMethod(state, method); err != nil {
 			return err
 		}
+		// Challenges created before this policy existed carry no allowlist decision.
+		if payload.LoginMethod == "oauth:github" && payload.GitHubGrant.UserID == "" {
+			policy, _, err := common.CurrentGitHubAccessPolicy()
+			if err != nil || policy.Enabled {
+				return model.ErrAuthFlowInvalid
+			}
+		}
 		if payload.PendingGitHubID == "" {
+			if payload.GitHubGrant.UserID != "" {
+				return model.ApplyGitHubLoginGrantWithTx(tx, session, payload.GitHubGrant)
+			}
 			return nil
 		}
 		// A binding that was relinked while the challenge was open is left as it
@@ -176,14 +190,23 @@ func CompleteLoginVerification(token string, verification *LoginVerification, me
 		if written {
 			migration = &LegacyGitHubMigration{GitHubID: payload.PendingGitHubID, LegacyID: payload.PendingGitHubLegacyID}
 		}
+		if payload.GitHubGrant.UserID != "" {
+			return model.ApplyGitHubLoginGrantWithTx(tx, session, payload.GitHubGrant)
+		}
 		return nil
 	}); err != nil {
 		return nil, nil, err
+	}
+	if verification.payload.GitHubGrant.UserID != "" {
+		if err := model.PublishUserAuthCache(session.UserID); err != nil {
+			return nil, nil, err
+		}
 	}
 	bundle, err := issueAuthBundle(session, session.SID+"."+refreshSecret, true)
 	if err != nil {
 		_, _ = model.RevokeUserSession(session.UserID, session.SID, "token_issue_failed")
 		return nil, nil, err
 	}
+	bundle.GitHubRolePromoted = session.UserAuthVersion != verification.payload.AuthVersion
 	return bundle, migration, nil
 }

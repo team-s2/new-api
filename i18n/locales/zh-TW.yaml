@@ -292,3 +292,6 @@ custom_oauth.name_empty: "供應者名稱不能為空"
 custom_oauth.has_bindings: "無法刪除已有使用者綁定的供應者"
 custom_oauth.binding_not_found: "OAuth 綁定不存在"
 custom_oauth.provider_id_field_invalid: "無法從供應者響應中提取使用者 ID"
+
+oauth.github_access_denied: "此 GitHub 帳號不在允許登入的範圍內。"
+oauth.github_access_check_failed: "無法驗證 GitHub 登入權限，請檢查組織授權後重試。"

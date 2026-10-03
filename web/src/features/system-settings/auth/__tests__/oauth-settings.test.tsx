@@ -337,3 +337,111 @@ describe('OAuth settings saves', () => {
     )
   })
 })
+
+describe('GitHub access policy settings', () => {
+  it('keeps allowlist fields disabled until restrictions are enabled', async () => {
+    const user = userEvent.setup()
+    await renderSettings()
+    expect(
+      screen.getByRole('textbox', { name: 'Allowed GitHub organizations' })
+    ).toBeDisabled()
+    expect(
+      screen.getByRole('combobox', { name: 'Automatic GitHub role' })
+    ).toBeDisabled()
+    await user.click(
+      screen.getByRole('switch', { name: 'Restrict GitHub sign-in' })
+    )
+    expect(
+      screen.getByRole('textbox', { name: 'Allowed GitHub user IDs' })
+    ).toBeEnabled()
+    expect(
+      screen.getByRole('combobox', { name: 'Automatic GitHub role' })
+    ).toBeEnabled()
+  })
+
+  it('saves both allowlists and Root promotion in one policy update', async () => {
+    const user = userEvent.setup()
+    await renderSettings()
+    await user.click(
+      screen.getByRole('switch', { name: 'Restrict GitHub sign-in' })
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Allowed GitHub organizations' }),
+      'Team-One, team-two'
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Allowed GitHub user IDs' }),
+      '42, 123'
+    )
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: 'Automatic GitHub role' }),
+      '100'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/api/option/', {
+        key: 'GitHubAccessPolicy',
+        value: JSON.stringify({
+          enabled: true,
+          organizations: ['team-one', 'team-two'],
+          user_ids: ['42', '123'],
+          role: 100,
+        }),
+      })
+    )
+    expect(api.put).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled()
+    )
+  })
+
+  it('rejects a username in the permanent account ID field', async () => {
+    const user = userEvent.setup()
+    await renderSettings()
+    await user.click(
+      screen.getByRole('switch', { name: 'Restrict GitHub sign-in' })
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Allowed GitHub user IDs' }),
+      'alice'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    expect(
+      await screen.findByText(
+        'Enter positive numeric GitHub account IDs (up to 1000).'
+      )
+    ).toBeVisible()
+    expect(
+      screen.getByRole('textbox', { name: 'Allowed GitHub user IDs' })
+    ).toHaveAttribute('aria-invalid', 'true')
+    expect(api.put).not.toHaveBeenCalled()
+  })
+
+  it('saves enabled empty lists as deny-all and clears automatic roles when disabled', async () => {
+    const user = userEvent.setup()
+    await renderSettings({
+      GitHubAccessPolicy: JSON.stringify({
+        enabled: true,
+        organizations: [],
+        user_ids: [],
+        role: 100,
+      }),
+    })
+    expect(screen.getByText(/Empty lists deny everyone/)).toBeVisible()
+    await user.click(
+      screen.getByRole('switch', { name: 'Restrict GitHub sign-in' })
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith('/api/option/', {
+        key: 'GitHubAccessPolicy',
+        value: JSON.stringify({
+          enabled: false,
+          organizations: [],
+          user_ids: [],
+          role: 0,
+        }),
+      })
+    )
+  })
+})

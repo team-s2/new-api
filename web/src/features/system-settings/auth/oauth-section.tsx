@@ -52,6 +52,13 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import {
+  githubAccessSchema,
+  parseGitHubAccessPolicy,
+  serializeGitHubAccessPolicy,
+  defaultGitHubAccessPolicy,
+} from './github-access-policy'
+import { GitHubAccessPolicyFields } from './github-access-policy-fields'
+import {
   buildOAuthCallbackUrl,
   resolveOAuthSiteUrl,
 } from './oauth-callback-url'
@@ -63,6 +70,7 @@ import {
  * flattened back to dotted server keys only when persisting.
  */
 const oauthSchema = z.object({
+  githubAccess: githubAccessSchema,
   GitHubOAuthEnabled: z.boolean(),
   GitHubClientId: z.string(),
   GitHubClientSecret: z.string(),
@@ -96,6 +104,7 @@ const oauthSchema = z.object({
 type OAuthFormValues = z.infer<typeof oauthSchema>
 
 type FlatOAuthDefaults = {
+  GitHubAccessPolicy?: string
   GitHubOAuthEnabled: boolean
   GitHubClientId: string
   GitHubClientSecret: string
@@ -179,6 +188,7 @@ const buildFormDefaults = (defaults: FlatOAuthDefaults): OAuthFormValues => ({
   GitHubOAuthEnabled: defaults.GitHubOAuthEnabled,
   GitHubClientId: defaults.GitHubClientId ?? '',
   GitHubClientSecret: defaults.GitHubClientSecret ?? '',
+  githubAccess: parseGitHubAccessPolicy(defaults.GitHubAccessPolicy),
   discord: {
     enabled: defaults['discord.enabled'],
     client_id: defaults['discord.client_id'] ?? '',
@@ -213,6 +223,7 @@ const normalizeFormValues = (values: OAuthFormValues): FlatOAuthDefaults => ({
   GitHubOAuthEnabled: values.GitHubOAuthEnabled,
   GitHubClientId: values.GitHubClientId,
   GitHubClientSecret: values.GitHubClientSecret,
+  GitHubAccessPolicy: serializeGitHubAccessPolicy(values.githubAccess),
   'discord.enabled': values.discord.enabled,
   'discord.client_id': values.discord.client_id,
   'discord.client_secret': values.discord.client_secret,
@@ -354,7 +365,14 @@ export function OAuthSection(props: OAuthSectionProps) {
     const normalized = normalizeFormValues(finalValues)
     const changedKeys = (
       Object.keys(normalized) as Array<keyof FlatOAuthDefaults>
-    ).filter((key) => normalized[key] !== baselineRef.current[key])
+    ).filter(
+      (key) =>
+        normalized[key] !==
+        (baselineRef.current[key] ??
+          (key === 'GitHubAccessPolicy'
+            ? defaultGitHubAccessPolicy
+            : undefined))
+    )
 
     if (changedKeys.length === 0) {
       toast.info(t('No changes to save'))
@@ -364,7 +382,7 @@ export function OAuthSection(props: OAuthSectionProps) {
     for (const key of changedKeys) {
       await updateOption.mutateAsync({
         key,
-        value: normalized[key],
+        value: normalized[key] ?? '',
       })
     }
 
@@ -492,6 +510,7 @@ export function OAuthSection(props: OAuthSectionProps) {
                     </FormItem>
                   )}
                 />
+                <GitHubAccessPolicyFields />
               </TabsContent>
 
               <TabsContent value='discord' className={oauthTabContentClassName}>

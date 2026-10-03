@@ -6828,6 +6828,19 @@
     "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.": "After login the browser will be redirected to a zcode:// link and the system may ask to open ZCode — cancel it, then copy the full link from the address bar and paste it below.",
     "Exchanging...": "Exchanging...",
     "Complete login": "Complete login",
-    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies."
+    "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.": "Disclaimer: Personal use only. Do not distribute or share any credentials. This channel relays your BigModel Coding Plan subscription; use it only if you understand the flow and risks, and comply with Zhipu's terms and policies.",
+    "Restrict GitHub sign-in": "Restrict GitHub sign-in",
+    "Only listed GitHub users or active members of any listed organization may sign in or link GitHub. Empty lists deny everyone. Other login methods are unaffected.": "Only listed GitHub users or active members of any listed organization may sign in or link GitHub. Empty lists deny everyone. Other login methods are unaffected.",
+    "Allowed GitHub organizations": "Allowed GitHub organizations",
+    "Separate organization names with commas or newlines. Each organization may need to approve the OAuth app for read:org access.": "Separate organization names with commas or newlines. Each organization may need to approve the OAuth app for read:org access.",
+    "Allowed GitHub user IDs": "Allowed GitHub user IDs",
+    "Use permanent numeric account IDs, separated by commas or newlines. Find the id field at https://api.github.com/users/USERNAME. Usernames can be reassigned.": "Use permanent numeric account IDs, separated by commas or newlines. Find the id field at https://api.github.com/users/USERNAME. Usernames can be reassigned.",
+    "Automatic GitHub role": "Automatic GitHub role",
+    "Keep existing role (new users are regular users)": "Keep existing role (new users are regular users)",
+    "Root (full access)": "Root (full access)",
+    "Promote allowed users after successful GitHub login, including existing accounts. Higher roles are preserved. Disabling promotion does not revoke previously granted roles.": "Promote allowed users after successful GitHub login, including existing accounts. Higher roles are preserved. Disabling promotion does not revoke previously granted roles.",
+    "Membership is checked at GitHub sign-in. Changes do not revoke existing sessions or access through other login methods. Revoke sessions and adjust roles separately when removing access.": "Membership is checked at GitHub sign-in. Changes do not revoke existing sessions or access through other login methods. Revoke sessions and adjust roles separately when removing access.",
+    "Enter valid GitHub organization names (up to 100).": "Enter valid GitHub organization names (up to 100).",
+    "Enter positive numeric GitHub account IDs (up to 1000).": "Enter positive numeric GitHub account IDs (up to 1000)."
   }
 }

@@ -147,8 +147,8 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 // Only a completed Passkey ceremony may go directly to session issuance. A
 // pending legacy GitHub binding rewrite travels inside the challenge and is
 // written only when the verification completes.
-func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *gin.Context) {
-	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c), migration)
+func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *gin.Context, grants ...*common.GitHubLoginGrant) {
+	challenge, err := service.StartLoginVerification(user, loginMethodFromContext(c), migration, grants...)
 	if err != nil {
 		writeSecurityOperationError(c, err)
 		return
@@ -158,10 +158,10 @@ func setupLogin(user *model.User, migration *service.LegacyGitHubMigration, c *g
 		common.ApiSuccess(c, challenge)
 		return
 	}
-	setupLoginAtAuthVersion(user, user.AuthVersion, c)
+	setupLoginAtAuthVersion(user, user.AuthVersion, c, grants...)
 }
 
-func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin.Context) {
+func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin.Context, grants ...*common.GitHubLoginGrant) {
 	if user == nil || user.Id <= 0 || user.Status != common.UserStatusEnabled {
 		common.ApiErrorI18n(c, i18n.MsgAuthUserBanned)
 		return
@@ -179,6 +179,7 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 			loginMethodFromContext(c),
 			c.ClientIP(),
 			c.Request.UserAgent(),
+			grants...,
 		)
 	} else {
 		bundle, err = service.CreateLoginSession(
@@ -192,10 +193,21 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 		writeAuthSessionError(c, err)
 		return
 	}
+	if len(grants) > 0 && grants[0] != nil {
+		currentUser, err = model.GetSelfUserById(user.Id)
+		if err != nil {
+			writeAuthSessionError(c, err)
+			return
+		}
+	}
 	writeLoginResponse(c, currentUser, bundle)
 }
 
 func writeLoginResponse(c *gin.Context, user *model.User, bundle *service.AuthBundle) {
+	if bundle.GitHubRolePromoted {
+		c.Set("role", user.Role)
+		recordUserSecurityAudit(c, user.Id, "user.github_role_promote", map[string]any{"role": user.Role, "success": true})
+	}
 	c.Set("login_method", bundle.Session.LoginMethod)
 	model.UpdateUserLastLoginAt(user.Id)
 	service.WriteRefreshCookie(c, bundle.RefreshToken)

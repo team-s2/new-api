@@ -1,5 +1,7 @@
 package oauth
 
+import "github.com/QuantumNous/new-api/common"
+
 // OAuthToken represents the token received from OAuth provider
 type OAuthToken struct {
 	AccessToken  string `json:"access_token"`
@@ -13,6 +15,7 @@ type OAuthToken struct {
 
 // OAuthUser represents the user info from OAuth provider
 type OAuthUser struct {
+	GitHubGrant *common.GitHubLoginGrant
 	// ProviderUserID is the unique identifier from the OAuth provider
 	ProviderUserID string
 	// Username is the username from the OAuth provider (e.g., GitHub login)

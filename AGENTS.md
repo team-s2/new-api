@@ -2,6 +2,7 @@
 
 - 支持 Codex channel 的 GPT 图像接口，包括 `gpt-image-2` 图像生成/编辑中继行为、校验、流式处理、计费防护和回归测试。
 - GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
+- GitHub OAuth 支持组织和永久用户 ID 白名单，以及可配置的管理员／超级管理员自动提升；配置和权限语义见 `docs/github-oauth-access.md`。
 
 本仓库的例行维护流程：
 
