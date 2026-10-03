@@ -1,3 +1,5 @@
+import { SettingsPage } from '../components/settings-page'
+import type { AuthSettings } from '../types'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -16,8 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { SettingsPage } from '../components/settings-page'
-import type { AuthSettings } from '../types'
+import { defaultGitHubAccessPolicy } from './github-access-policy'
 import {
   AUTH_DEFAULT_SECTION,
   getAuthSectionContent,
@@ -36,6 +37,7 @@ const defaultAuthSettings: AuthSettings = {
   GitHubOAuthEnabled: false,
   GitHubClientId: '',
   GitHubClientSecret: '',
+  GitHubAccessPolicy: defaultGitHubAccessPolicy,
   'discord.enabled': false,
   'discord.client_id': '',
   'discord.client_secret': '',

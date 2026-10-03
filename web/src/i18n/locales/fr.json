@@ -2685,6 +2685,8 @@
     "Failed to start {{provider}} login": "Échec du démarrage de la connexion {{provider}}",
     "Failed to start Discord login": "Échec du démarrage de la connexion Discord",
     "Failed to start GitHub login": "Échec du démarrage de la connexion GitHub",
+    "This GitHub account is not allowed to sign in.": "Ce compte GitHub n'est pas autorisé à se connecter.",
+    "Unable to verify GitHub access. Check organization access approval and try again.": "Impossible de vérifier l'accès GitHub. Vérifiez l'approbation de l'accès à l'organisation et réessayez.",
     "Failed to start LinuxDO login": "Échec du démarrage de la connexion LinuxDO",
     "Failed to start OIDC login": "Échec du démarrage de la connexion OIDC",
     "Failed to start Passkey login": "Impossible de démarrer la connexion Passkey",

@@ -2685,6 +2685,8 @@
     "Failed to start {{provider}} login": "{{provider}} ログインの開始に失敗しました",
     "Failed to start Discord login": "Discordログインの開始に失敗しました",
     "Failed to start GitHub login": "GitHubログインの開始に失敗しました",
+    "This GitHub account is not allowed to sign in.": "この GitHub アカウントはサインインできません。",
+    "Unable to verify GitHub access. Check organization access approval and try again.": "GitHub へのアクセスを確認できません。組織のアクセス承認を確認して再試行してください。",
     "Failed to start LinuxDO login": "LinuxDOログインの開始に失敗しました",
     "Failed to start OIDC login": "OIDCログインの開始に失敗しました",
     "Failed to start Passkey login": "Passkeyログインの開始に失敗しました",

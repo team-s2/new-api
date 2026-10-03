@@ -2685,6 +2685,8 @@
     "Failed to start {{provider}} login": "Không thể bắt đầu đăng nhập {{provider}}",
     "Failed to start Discord login": "Không thể bắt đầu đăng nhập Discord",
     "Failed to start GitHub login": "Không thể bắt đầu đăng nhập GitHub",
+    "This GitHub account is not allowed to sign in.": "Tài khoản GitHub này không được phép đăng nhập.",
+    "Unable to verify GitHub access. Check organization access approval and try again.": "Không thể xác minh quyền truy cập GitHub. Hãy kiểm tra phê duyệt truy cập tổ chức và thử lại.",
     "Failed to start LinuxDO login": "Không thể bắt đầu đăng nhập LinuxDO",
     "Failed to start OIDC login": "Không thể bắt đầu đăng nhập OIDC",
     "Failed to start Passkey login": "Không thể bắt đầu đăng nhập Passkey",

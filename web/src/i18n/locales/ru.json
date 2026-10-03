@@ -2685,6 +2685,8 @@
     "Failed to start {{provider}} login": "Не удалось начать вход через {{provider}}",
     "Failed to start Discord login": "Не удалось начать вход через Discord",
     "Failed to start GitHub login": "Не удалось начать вход через GitHub",
+    "This GitHub account is not allowed to sign in.": "Этому аккаунту GitHub вход запрещён.",
+    "Unable to verify GitHub access. Check organization access approval and try again.": "Не удалось проверить доступ к GitHub. Проверьте одобрение доступа к организации и повторите попытку.",
     "Failed to start LinuxDO login": "Не удалось начать вход через LinuxDO",
     "Failed to start OIDC login": "Не удалось начать вход через OIDC",
     "Failed to start Passkey login": "Не удалось начать вход с Passkey",

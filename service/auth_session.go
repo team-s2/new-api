@@ -42,25 +42,26 @@ type LoginSessionView struct {
 }
 
 type AuthBundle struct {
-	AccessToken     string           `json:"access_token"`
-	TokenType       string           `json:"token_type"`
-	AccessExpiresAt int64            `json:"access_expires_at"`
-	Session         LoginSessionView `json:"session"`
-	RefreshToken    string           `json:"-"`
+	GitHubRolePromoted bool             `json:"-"`
+	AccessToken        string           `json:"access_token"`
+	TokenType          string           `json:"token_type"`
+	AccessExpiresAt    int64            `json:"access_expires_at"`
+	Session            LoginSessionView `json:"session"`
+	RefreshToken       string           `json:"-"`
 }
 
 func CreateLoginSession(userID int, loginMethod, ip, userAgent string) (*AuthBundle, error) {
 	return createLoginSession(userID, 0, loginMethod, ip, userAgent)
 }
 
-func CreateLoginSessionAtAuthVersion(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string) (*AuthBundle, error) {
+func CreateLoginSessionAtAuthVersion(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string, grants ...*common.GitHubLoginGrant) (*AuthBundle, error) {
 	if expectedAuthVersion <= 0 {
 		return nil, ErrLoginSessionInvalid
 	}
-	return createLoginSession(userID, expectedAuthVersion, loginMethod, ip, userAgent)
+	return createLoginSession(userID, expectedAuthVersion, loginMethod, ip, userAgent, grants...)
 }
 
-func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string) (*AuthBundle, error) {
+func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, userAgent string, grants ...*common.GitHubLoginGrant) (*AuthBundle, error) {
 	user, err := model.GetUserCache(userID)
 	if err != nil {
 		return nil, err
@@ -90,7 +91,12 @@ func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, 
 	if err != nil {
 		return nil, err
 	}
-	if err := model.CreateUserSession(session); err != nil {
+	if len(grants) > 0 && grants[0] != nil {
+		err = model.CreateGitHubUserSession(session, *grants[0])
+	} else {
+		err = model.CreateUserSession(session)
+	}
+	if err != nil {
 		return nil, err
 	}
 	bundle, err := issueAuthBundle(session, session.SID+"."+refreshSecret, true)
@@ -98,6 +104,7 @@ func createLoginSession(userID int, expectedAuthVersion int64, loginMethod, ip, 
 		_, _ = model.RevokeUserSession(userID, session.SID, "token_issue_failed")
 		return nil, err
 	}
+	bundle.GitHubRolePromoted = session.UserAuthVersion != user.AuthVersion
 	return bundle, nil
 }
 

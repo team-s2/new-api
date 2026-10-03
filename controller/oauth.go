@@ -340,7 +340,7 @@ func handleOAuthLogin(c *gin.Context, provider oauth.Provider, oauthUser *oauth.
 	}
 
 	// 9. Setup login
-	setupLogin(user, migration, c)
+	setupLogin(user, migration, c, oauthUser.GitHubGrant)
 }
 
 // handleOAuthBind handles binding OAuth account to existing user
@@ -618,6 +618,8 @@ func (e *OAuthLegacyBindingNotConfirmedError) Error() string {
 // handleOAuthError handles OAuth errors and returns a web console message
 func handleOAuthError(c *gin.Context, err error) {
 	switch e := err.(type) {
+	case *oauth.GitHubAccessDeniedError:
+		common.ApiErrorStatus(c, http.StatusForbidden, e.Message)
 	case *oauth.OAuthError:
 		common.ApiError(c, e.Message)
 	case *oauth.AccessDeniedError:

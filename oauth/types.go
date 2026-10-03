@@ -15,6 +15,7 @@ type OAuthToken struct {
 
 // OAuthUser represents the user info from OAuth provider
 type OAuthUser struct {
+	GitHubGrant *common.GitHubLoginGrant
 	// ProviderUserID is the unique identifier from the OAuth provider
 	ProviderUserID string
 	// Username is the username from the OAuth provider (e.g., GitHub login)
@@ -34,6 +35,9 @@ const (
 	msgUserInfoEmpty = "{{provider}} returned empty user info, please check settings"
 	msgConnectFailed = "Unable to connect to {{provider}} server, please try again later"
 	msgGetUserFailed = "Failed to get user information"
+
+	msgGitHubAccessDenied      = "This GitHub account is not allowed to sign in."
+	msgGitHubAccessCheckFailed = "Unable to verify GitHub access. Check organization access approval and try again."
 )
 
 // OAuthError represents a translatable OAuth error
@@ -59,6 +63,18 @@ func NewOAuthError(message *common.Message) *OAuthError {
 // NewOAuthErrorWithRaw creates a new OAuth error with raw error message for logging
 func NewOAuthErrorWithRaw(message *common.Message, rawError string) *OAuthError {
 	return &OAuthError{Message: message, RawError: rawError}
+}
+
+// GitHubAccessDeniedError reports a GitHub account the access policy rejects.
+// The web console receives it as a forbidden response, unlike the generic OAuth
+// errors, which keep the console's success-envelope status.
+type GitHubAccessDeniedError struct {
+	*OAuthError
+}
+
+// NewGitHubAccessDeniedError creates a forbidden GitHub access policy error.
+func NewGitHubAccessDeniedError(message *common.Message) *GitHubAccessDeniedError {
+	return &GitHubAccessDeniedError{OAuthError: NewOAuthError(message)}
 }
 
 // AccessDeniedError is a direct user-facing access denial message.
