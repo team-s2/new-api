@@ -514,6 +514,62 @@ export async function exchangeZhipuOAuthToken(
 }
 
 // ============================================================================
+// Grok Subscription Channel Operations
+// ============================================================================
+
+export interface GrokOAuthLoginResponse {
+  success: boolean
+  message?: string
+  data?: {
+    authorize_url: string
+    session_id: string
+  }
+}
+
+export interface GrokOAuthExchangeResponse {
+  success: boolean
+  message?: string
+  data?: {
+    credential: string
+  }
+}
+
+export async function startGrokOAuthLogin(
+  signal?: AbortSignal
+): Promise<GrokOAuthLoginResponse> {
+  const res = await api.post(
+    '/api/channel/grok/oauth/login',
+    {},
+    channelActionConfig({ disableDuplicate: true, signal })
+  )
+  return res.data
+}
+
+export async function exchangeGrokOAuthCode(
+  sessionId: string,
+  input: string,
+  signal?: AbortSignal
+): Promise<GrokOAuthExchangeResponse> {
+  const res = await api.post(
+    '/api/channel/grok/oauth/exchange',
+    { session_id: sessionId, input },
+    channelActionConfig({ signal })
+  )
+  return res.data
+}
+
+export async function refreshGrokCredential(
+  channelId: number
+): Promise<CodexCredentialRefreshResponse> {
+  const res = await api.post(
+    `/api/channel/${channelId}/grok/refresh`,
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+// ============================================================================
 // Multi-Key Management
 // ============================================================================
 

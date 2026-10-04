@@ -64,6 +64,7 @@ const (
 	// 从 100 起预留较大编号，避免与上游新增渠道类型（62/63 已被 VLLM/SGLang
 	// 占用）再次冲突；持久化编号必须与前端保持一致。
 	ChannelTypeBigModelSub    = 100
+	ChannelTypeGrokSub        = 101
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -173,7 +174,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //98
 	"",                                          //99
 	"glm-coding-plan",                           //100
-
+	"https://cli-chat-proxy.grok.com/v1",        //101
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -245,6 +246,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeVLLM:           "vLLM",
 	ChannelTypeSGLang:         "SGLang",
 	ChannelTypeBigModelSub:    "BigModel Subscription (Coding Plan)",
+	ChannelTypeGrokSub:        "Grok Subscription",
 }
 
 func GetChannelTypeName(channelType int) string {

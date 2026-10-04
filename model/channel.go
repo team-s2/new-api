@@ -1,6 +1,7 @@
 package model
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -447,6 +448,42 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 		return nil, err
 	}
 	return channel, nil
+}
+
+// UpdateChannelCredential serializes refresh-token use across gateway processes.
+// The callback sees the current credential under the database lock; it must use
+// ctx for remote calls and may return the existing key when no refresh is needed.
+func UpdateChannelCredential(ctx context.Context, id int, refresh func(*Channel) (string, error)) (*Channel, error) {
+	var channel Channel
+	err := DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+			// Acquire SQLite's writer lock before reading; two deferred readers cannot
+			// safely upgrade to writers after each has rotated the same refresh token.
+			if err := tx.Model(&Channel{}).Where("id = ?", id).UpdateColumn("id", id).Error; err != nil {
+				return err
+			}
+		}
+		if err := lockForUpdate(tx).First(&channel, "id = ?", id).Error; err != nil {
+			return err
+		}
+		key, err := refresh(&channel)
+		if err != nil {
+			return err
+		}
+		if key == channel.Key {
+			return nil
+		}
+		if err := tx.Model(&Channel{}).Where("id = ?", id).Update("key", key).Error; err != nil {
+			return err
+		}
+		channel.Key = key
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	CacheUpdateChannel(&channel)
+	return &channel, nil
 }
 
 func BatchInsertChannels(channels []Channel) error {

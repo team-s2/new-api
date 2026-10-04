@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 )
 
@@ -45,6 +46,11 @@ func ShouldChatCompletionsUseResponsesPolicy(policy model_setting.ChatCompletion
 }
 
 func ShouldChatCompletionsUseResponsesGlobal(channelID int, channelType int, model string) bool {
+	// The Grok subscription gateway only speaks the Responses protocol, so
+	// chat/completions and Claude traffic must always be bridged for it.
+	if channelType == constant.ChannelTypeGrokSub {
+		return true
+	}
 	return ShouldChatCompletionsUseResponsesPolicy(
 		model_setting.GetGlobalSettings().ChatCompletionsToResponsesPolicy,
 		channelID,

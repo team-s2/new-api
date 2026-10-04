@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -697,4 +699,24 @@ func TestFetchBigModelModelsUsesCodingPlanAPIKey(t *testing.T) {
 		assert.Equal(t, http.StatusOK, recorder.Code)
 		assert.JSONEq(t, `{"success":true,"message":"","data":["glm-5.3","glm-5.3-flash"]}`, recorder.Body.String())
 	})
+}
+
+func TestFetchGrokModelsUsesOAuthAccessToken(t *testing.T) {
+	service.InitHttpClient()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/models", r.URL.Path)
+		assert.Equal(t, "Bearer grok-access", r.Header.Get("Authorization"))
+		assert.NotEmpty(t, r.Header.Get("x-grok-client-version"))
+		assert.Contains(t, r.Header.Get("User-Agent"), "grok-pager/")
+		_, _ = io.WriteString(w, `{"data":[{"id":"grok-4.6"}]}`)
+	}))
+	defer server.Close()
+	raw, err := common.Marshal(map[string]any{"type": constant.ChannelTypeGrokSub, "base_url": server.URL + "/v1", "key": "{\n\"access_token\":\"grok-access\",\n\"refresh_token\":\"secret-refresh\"\n}"})
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/fetch_models", bytes.NewReader(raw))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	FetchModels(ctx)
+	assert.JSONEq(t, `{"success":true,"message":"","data":["grok-4.6"]}`, recorder.Body.String())
 }

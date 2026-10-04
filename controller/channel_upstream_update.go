@@ -364,6 +364,8 @@ func getFetchModelsResponseBody(method string, requestURL string, channel *model
 func getUpstreamModelsURL(channelType int, baseURL string) string {
 	baseURL = strings.TrimRight(baseURL, "/")
 	switch channelType {
+	case constant.ChannelTypeGrokSub:
+		return baseURL + "/models"
 	case constant.ChannelTypeAli:
 		return fmt.Sprintf("%s/compatible-mode/v1/models", baseURL)
 	case constant.ChannelTypeZhipu_v4, constant.ChannelTypeBigModelSub:
@@ -432,13 +434,20 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return service.FetchCodexChannelModels(channel)
 	}
 
- 	url := getUpstreamModelsURL(channel.Type, baseURL)
+	url := getUpstreamModelsURL(channel.Type, baseURL)
 
 	key, _, apiErr := channel.GetNextEnabledKey()
 	if apiErr != nil {
 		return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
 	}
 	key = strings.TrimSpace(key)
+	if channel.Type == constant.ChannelTypeGrokSub && channel.Id > 0 && !channel.ChannelInfo.IsMultiKey {
+		var err error
+		key, err = service.EnsureGrokChannelAccessToken(context.Background(), channel)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	headers, err := buildFetchModelsHeaders(channel, key)
 	if err != nil {

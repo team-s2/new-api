@@ -629,6 +629,16 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	}
 	// c.Request.Header.Set("Authorization", fmt.Sprintf("Bearer %s", key))
 	common.SetContextKey(c, constant.ContextKeyChannelKey, key)
+
+	// Grok subscription tokens are short-lived; lazily refresh an expiring
+	// credential before the relay reads the key. Best-effort: on refresh
+	// failure the stale key is still passed through.
+	if channel.Type == constant.ChannelTypeGrokSub && !channel.ChannelInfo.IsMultiKey {
+		if refreshedKey, err := service.EnsureGrokChannelAccessToken(c.Request.Context(), channel); err == nil && refreshedKey != "" {
+			common.SetContextKey(c, constant.ContextKeyChannelKey, refreshedKey)
+		}
+	}
+
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, channel.GetBaseURL())
 
 	common.SetContextKey(c, constant.ContextKeySystemPromptOverride, false)
