@@ -569,6 +569,46 @@ export async function refreshGrokCredential(
   return res.data
 }
 
+export interface GrokBillingWindow {
+  period_type?: string
+  period_start?: string
+  period_end?: string
+  usage_percent?: number
+  used_percent?: number
+  monthly_limit?: number
+  monthly_used?: number
+}
+
+export interface GrokBillingUsage {
+  weekly?: GrokBillingWindow | null
+  monthly?: GrokBillingWindow | null
+  prepaid_balance?: number | null
+  on_demand_cap?: number | null
+  on_demand_used?: number | null
+  plan?: string
+  product_usage?: { product: string; usage_percent?: number }[]
+  is_unified_billing_user?: boolean
+  top_up_method?: string
+  failed_windows?: string[]
+}
+
+export interface GrokUsageResponse {
+  success: boolean
+  message?: string
+  upstream_status?: number
+  data?: GrokBillingUsage
+}
+
+export async function getGrokUsage(
+  channelId: number
+): Promise<GrokUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/grok/usage`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
 // ============================================================================
 // Multi-Key Management
 // ============================================================================

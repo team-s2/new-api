@@ -18,9 +18,11 @@ import (
 
 const (
 	grokCredentialRefreshTickInterval = 10 * time.Minute
-	grokCredentialRefreshThreshold    = 24 * time.Hour
-	grokCredentialRefreshBatchSize    = 200
-	grokCredentialRefreshTimeout      = 15 * time.Second
+	// xAI access tokens live about an hour, so a Codex-style 24h threshold
+	// would rotate every refresh token on every tick.
+	grokCredentialRefreshThreshold = 30 * time.Minute
+	grokCredentialRefreshBatchSize = 200
+	grokCredentialRefreshTimeout   = 15 * time.Second
 )
 
 var (

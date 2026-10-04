@@ -75,6 +75,7 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodPost, path: "/grok/oauth/login", permission: authz.ChannelSensitiveWrite, handler: controller.StartGrokOAuthLogin},
 	{method: http.MethodPost, path: "/grok/oauth/exchange", permission: authz.ChannelSensitiveWrite, handler: controller.ExchangeGrokOAuthCode},
 	{method: http.MethodPost, path: "/:id/grok/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshGrokChannelCredential},
+	{method: http.MethodGet, path: "/:id/grok/usage", permission: authz.ChannelRead, handler: controller.GetGrokChannelUsage},
 	{method: http.MethodPost, path: "/ollama/pull", permission: authz.ChannelSensitiveWrite, handler: controller.OllamaPullModel},
 	{method: http.MethodPost, path: "/ollama/pull/stream", permission: authz.ChannelSensitiveWrite, handler: controller.OllamaPullModelStream},
 	{method: http.MethodDelete, path: "/ollama/delete", permission: authz.ChannelSensitiveWrite, handler: controller.OllamaDeleteModel},

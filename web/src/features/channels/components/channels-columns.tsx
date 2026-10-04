@@ -59,8 +59,10 @@ import { truncateText } from '@/lib/utils'
 
 import {
   getCodexUsage,
+  getGrokUsage,
   getZhipuCodingPlanUsage,
   updateChannelBalance,
+  type GrokUsageResponse,
   type ZhipuCodingPlanUsageResponse,
 } from '../api'
 import {
@@ -69,6 +71,7 @@ import {
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_BIGMODEL_SUB,
+  CHANNEL_TYPE_GROK_SUB,
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
 import {
@@ -102,6 +105,7 @@ import {
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
 import { ZhipuCodingPlanUsageDialog } from './dialogs/zhipu-coding-plan-usage-dialog'
+import { GrokUsageDialog } from './dialogs/grok-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
@@ -360,10 +364,15 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const [zhipuUsageOpen, setZhipuUsageOpen] = useState(false)
   const [zhipuUsageResponse, setZhipuUsageResponse] =
     useState<ZhipuCodingPlanUsageResponse | null>(null)
+  const [grokUsageOpen, setGrokUsageOpen] = useState(false)
+  const [grokUsageResponse, setGrokUsageResponse] =
+    useState<GrokUsageResponse | null>(null)
   const isZhipuCodingPlan =
     channel.type === CHANNEL_TYPE_BIGMODEL_SUB ||
     (channel.type === 26 && channel.base_url === 'glm-coding-plan')
-  const isAccountInfoChannel = channel.type === 57 || isZhipuCodingPlan
+  const isGrokSub = channel.type === CHANNEL_TYPE_GROK_SUB
+  const isAccountInfoChannel =
+    channel.type === 57 || isZhipuCodingPlan || isGrokSub
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -494,6 +503,24 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       return
     }
 
+    if (isGrokSub) {
+      try {
+        const res = await getGrokUsage(channel.id)
+        if (!res.success) {
+          throw new Error(res.message || t('Failed to fetch usage'))
+        }
+        setGrokUsageResponse(res)
+        setGrokUsageOpen(true)
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : t('Failed to fetch usage')
+        )
+      } finally {
+        setIsUpdating(false)
+      }
+      return
+    }
+
     try {
       const response = await updateChannelBalance(channel.id)
       if (response.success && response.balance !== undefined) {
@@ -536,6 +563,8 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = t('Click to view Codex usage')
   } else if (isZhipuCodingPlan) {
     remainingTooltipLabel = t('Click to view Zhipu Coding Plan usage')
+  } else if (isGrokSub) {
+    remainingTooltipLabel = t('Click to view Grok subscription usage')
   } else if (isInferenceChannel) {
     remainingTooltipLabel = inferenceStatusLabel
   }
@@ -623,6 +652,33 @@ export function BalanceCell({ channel }: { channel: Channel }) {
               throw createServerError(res, t('Failed to fetch usage'))
             }
             setCodexUsageResponse(res)
+          } catch (error) {
+            handleServerError(error, t('Failed to fetch usage'))
+          } finally {
+            setIsUpdating(false)
+          }
+        }}
+        isRefreshing={isUpdating}
+      />
+      <GrokUsageDialog
+        open={grokUsageOpen}
+        onOpenChange={setGrokUsageOpen}
+        channelName={channel.name}
+        channelId={channel.id}
+        channelDisplayName={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        channelDisplayId={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        response={grokUsageResponse}
+        onRefresh={async () => {
+          if (isUpdating) {
+            return
+          }
+          setIsUpdating(true)
+          try {
+            const res = await getGrokUsage(channel.id)
+            if (!res.success) {
+              throw new Error(res.message || t('Failed to fetch usage'))
+            }
+            setGrokUsageResponse(res)
           } catch (error) {
             handleServerError(error, t('Failed to fetch usage'))
           } finally {
