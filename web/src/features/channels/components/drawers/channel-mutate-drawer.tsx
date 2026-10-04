@@ -135,12 +135,14 @@ import {
   getPrefillGroups,
   getTaskPluginOptions,
   refreshCodexCredential,
+  refreshGrokCredential,
 } from '../../api'
 import {
   ADD_MODE_OPTIONS,
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_OLLAMA,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_TASK_PLUGIN,
@@ -215,6 +217,7 @@ import {
   BigModelOAuthControls,
   BigModelOAuthLoginDialog,
 } from '../dialogs/bigmodel-oauth-login-dialog'
+import { GrokOAuthControls, GrokOAuthLoginDialog } from '../dialogs/grok-oauth-login-dialog'
 import { ConfigureModelsDialog } from '../dialogs/configure-models-dialog'
 import {
   MissingModelsConfirmationDialog,
@@ -430,11 +433,14 @@ export function ChannelMutateDrawer({
   const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
   const [isCodexCredentialRefreshing, setIsCodexCredentialRefreshing] =
     useState(false)
+  const [isGrokCredentialRefreshing, setIsGrokCredentialRefreshing] =
+    useState(false)
   const initialModelsRef = useRef<string[]>([])
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
   const [statusCodeRiskOpen, setStatusCodeRiskOpen] = useState(false)
   const [bigModelOAuthOpen, setBigModelOAuthOpen] = useState(false)
+  const [grokOAuthOpen, setGrokOAuthOpen] = useState(false)
   const [statusCodeRiskDetailItems, setStatusCodeRiskDetailItems] = useState<
     string[]
   >([])
@@ -1182,6 +1188,25 @@ export function ChannelMutateDrawer({
       handleServerError(error, t('Refresh failed'))
     } finally {
       setIsCodexCredentialRefreshing(false)
+    }
+  }, [channelId, queryClient, t])
+
+  const handleRefreshGrokCredential = useCallback(async () => {
+    if (!channelId) return
+    setIsGrokCredentialRefreshing(true)
+    try {
+      const res = await refreshGrokCredential(channelId)
+      if (!res.success) {
+        throw createServerError(res, t('Failed to refresh credential'))
+      }
+      toast.success(t('Credential refreshed'))
+      queryClient.invalidateQueries({
+        queryKey: channelsQueryKeys.detail(channelId),
+      })
+    } catch (error) {
+      handleServerError(error, t('Refresh failed'))
+    } finally {
+      setIsGrokCredentialRefreshing(false)
     }
   }, [channelId, queryClient, t])
 
@@ -4466,9 +4491,44 @@ export function ChannelMutateDrawer({
                 </div>
               )}
 
+              {currentType === CHANNEL_TYPE_GROK_SUB && isEditing && channelId && (
+                <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                  <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                    <div className='text-muted-foreground text-xs'>
+                      {t(
+                        'Grok subscription tokens refresh automatically; you can also refresh manually.'
+                      )}
+                    </div>
+                    <div className='flex flex-wrap items-center gap-2'>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
+                        onClick={handleRefreshGrokCredential}
+                        disabled={sensitiveLocked || isGrokCredentialRefreshing}
+                      >
+                        {isGrokCredentialRefreshing ? (
+                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                        ) : (
+                          <RefreshCw className='mr-2 h-4 w-4' />
+                        )}
+                        {isGrokCredentialRefreshing
+                          ? t('Refreshing...')
+                          : t('Refresh credential')}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <BigModelOAuthControls
                 channelType={currentType}
                 onLogin={() => setBigModelOAuthOpen(true)}
+              />
+
+              <GrokOAuthControls
+                channelType={currentType}
+                onLogin={() => setGrokOAuthOpen(true)}
               />
 
               {isEditing && isMultiKeyChannel && (
@@ -5018,6 +5078,14 @@ export function ChannelMutateDrawer({
       <BigModelOAuthLoginDialog
         open={bigModelOAuthOpen}
         onOpenChange={setBigModelOAuthOpen}
+        onApply={(credential) =>
+          form.setValue('key', credential, { shouldValidate: true })
+        }
+      />
+
+      <GrokOAuthLoginDialog
+        open={grokOAuthOpen}
+        onOpenChange={setGrokOAuthOpen}
         onApply={(credential) =>
           form.setValue('key', credential, { shouldValidate: true })
         }
