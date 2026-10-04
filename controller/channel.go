@@ -16,9 +16,10 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/groksub"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
-	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/channel/zhipu_4v"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
@@ -293,6 +294,11 @@ func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, e
 
 	var headers http.Header
 	switch channel.Type {
+	case constant.ChannelTypeGrokSub:
+		headers = make(http.Header)
+		if err := groksub.ApplyOAuthHeaders(headers, key, channel.GetBaseURL()); err != nil {
+			return nil, err
+		}
 	case constant.ChannelTypeAnthropic:
 		headers = GetClaudeAuthHeader(key)
 	default:
@@ -1546,7 +1552,7 @@ func FetchModels(c *gin.Context) {
 			})
 			return
 		}
-		if req.Type != constant.ChannelTypeCodex {
+		if req.Type != constant.ChannelTypeCodex && req.Type != constant.ChannelTypeGrokSub {
 			key = strings.Split(key, "\n")[0]
 		}
 		channel = &model.Channel{

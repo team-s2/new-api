@@ -21,6 +21,7 @@ import { formatTimestampToDate } from '@/lib/format'
 
 import {
   CHANNEL_TYPE_BIGMODEL_SUB,
+  CHANNEL_TYPE_GROK_SUB,
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPES,
   MULTI_KEY_STATUS_CONFIG,
@@ -93,6 +94,7 @@ export function getChannelTypeIcon(type: number): string {
     42: 'Mistral', // Mistral
     43: 'DeepSeek', // DeepSeek
     48: 'XAI', // xAI
+    [CHANNEL_TYPE_GROK_SUB]: 'XAI', // Grok Subscription
     49: 'Coze', // Coze
     40: 'SiliconCloud', // SiliconFlow
     44: 'OpenAI', // MokaAI

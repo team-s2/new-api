@@ -50,6 +50,9 @@ func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) s
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
+	if channel != nil && channel.Type == constant.ChannelTypeGrokSub {
+		return string(constant.EndpointTypeOpenAIResponse)
+	}
 	return normalized
 }
 
