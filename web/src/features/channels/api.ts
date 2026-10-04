@@ -534,23 +534,26 @@ export interface GrokOAuthExchangeResponse {
   }
 }
 
-export async function startGrokOAuthLogin(): Promise<GrokOAuthLoginResponse> {
+export async function startGrokOAuthLogin(
+  signal?: AbortSignal
+): Promise<GrokOAuthLoginResponse> {
   const res = await api.post(
     '/api/channel/grok/oauth/login',
     {},
-    channelActionConfig({ disableDuplicate: true })
+    channelActionConfig({ disableDuplicate: true, signal })
   )
   return res.data
 }
 
 export async function exchangeGrokOAuthCode(
   sessionId: string,
-  input: string
+  input: string,
+  signal?: AbortSignal
 ): Promise<GrokOAuthExchangeResponse> {
   const res = await api.post(
     '/api/channel/grok/oauth/exchange',
     { session_id: sessionId, input },
-    channelActionConfig()
+    channelActionConfig({ signal })
   )
   return res.data
 }

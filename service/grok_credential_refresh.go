@@ -11,53 +11,55 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-// RefreshGrokChannelCredential refreshes a Grok Subscription channel's OAuth
-// tokens in place (channels.key) and returns the updated key.
-func RefreshGrokChannelCredential(ctx context.Context, channelID int, resetCaches bool) (*GrokOAuthKey, *model.Channel, error) {
+// RefreshGrokChannelCredential forces a refresh unless a concurrent caller has
+// already replaced the credential that this call observed. The updated channel
+// is always published to the local cache after the transaction commits.
+func RefreshGrokChannelCredential(ctx context.Context, channelID int) (*GrokOAuthKey, *model.Channel, error) {
 	ch, err := model.GetChannelById(channelID, true)
 	if err != nil {
 		return nil, nil, err
 	}
-	if ch == nil {
-		return nil, nil, fmt.Errorf("channel not found")
-	}
-	if ch.Type != constant.ChannelTypeGrokSub {
-		return nil, nil, fmt.Errorf("channel type is not Grok Subscription")
-	}
+	return refreshGrokChannelCredential(ctx, ch, true)
+}
 
-	oauthKey, err := ParseGrokOAuthKey(strings.TrimSpace(ch.Key))
-	if err != nil {
-		return nil, nil, err
-	}
-	if strings.TrimSpace(oauthKey.RefreshToken) == "" {
-		return nil, nil, fmt.Errorf("grok subscription channel: refresh_token is required to refresh credential")
-	}
-
+func refreshGrokChannelCredential(ctx context.Context, observed *model.Channel, force bool) (*GrokOAuthKey, *model.Channel, error) {
 	refreshCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-
-	res, err := RefreshGrokOAuthToken(refreshCtx, oauthKey.RefreshToken, ch.GetSetting().Proxy)
+	var oauthKey *GrokOAuthKey
+	ch, err := model.UpdateChannelCredential(refreshCtx, observed.Id, func(current *model.Channel) (string, error) {
+		if current.Type != constant.ChannelTypeGrokSub || current.ChannelInfo.IsMultiKey {
+			return "", fmt.Errorf("channel must be a single-key Grok Subscription channel")
+		}
+		var err error
+		oauthKey, err = ParseGrokOAuthKey(current.Key)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(oauthKey.AccessToken) != "" && (current.Key != observed.Key || (!force && grokTokenUsable(oauthKey.Expired))) {
+			return current.Key, nil
+		}
+		if strings.TrimSpace(oauthKey.RefreshToken) == "" {
+			return "", fmt.Errorf("grok subscription channel: refresh_token is required to refresh credential")
+		}
+		res, err := RefreshGrokOAuthToken(refreshCtx, oauthKey.RefreshToken, current.GetSetting().Proxy)
+		if err != nil {
+			return "", err
+		}
+		oauthKey.AccessToken = strings.TrimSpace(res.AccessToken)
+		oauthKey.RefreshToken = strings.TrimSpace(res.RefreshToken)
+		if strings.TrimSpace(res.IDToken) != "" {
+			oauthKey.IDToken = strings.TrimSpace(res.IDToken)
+		}
+		oauthKey.LastRefresh = time.Now().Format(time.RFC3339)
+		oauthKey.Expired = ""
+		if res.ExpiresIn > 0 {
+			oauthKey.Expired = time.Now().Add(time.Duration(res.ExpiresIn) * time.Second).Format(time.RFC3339)
+		}
+		encoded, err := common.Marshal(oauthKey)
+		return string(encoded), err
+	})
 	if err != nil {
 		return nil, nil, err
-	}
-
-	oauthKey.AccessToken = strings.TrimSpace(res.AccessToken)
-	oauthKey.RefreshToken = strings.TrimSpace(res.RefreshToken)
-	oauthKey.IDToken = strings.TrimSpace(res.IDToken)
-	oauthKey.LastRefresh = time.Now().Format(time.RFC3339)
-	if res.ExpiresIn > 0 {
-		oauthKey.Expired = time.Now().Add(time.Duration(res.ExpiresIn) * time.Second).Format(time.RFC3339)
-	}
-
-	encoded, err := common.Marshal(oauthKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := model.DB.Model(&model.Channel{}).Where("id = ?", ch.Id).Update("key", string(encoded)).Error; err != nil {
-		return nil, nil, err
-	}
-	if resetCaches {
-		model.InitChannelCache()
 	}
 	return oauthKey, ch, nil
 }
@@ -85,7 +87,7 @@ func EnsureGrokChannelAccessToken(ctx context.Context, ch *model.Channel) (strin
 
 	refreshCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	refreshed, _, err := RefreshGrokChannelCredential(refreshCtx, ch.Id, false)
+	refreshed, _, err := refreshGrokChannelCredential(refreshCtx, ch, false)
 	if err != nil {
 		if strings.TrimSpace(oauthKey.AccessToken) != "" {
 			return rawKey, nil

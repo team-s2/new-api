@@ -42,6 +42,7 @@ var grokOAuthTokenEndpoint = grokOAuthTokenURL
 
 // GrokOAuthSession is one pending PKCE flow.
 type GrokOAuthSession struct {
+	OwnerSession  string
 	State         string
 	CodeVerifier  string
 	CodeChallenge string
@@ -84,7 +85,10 @@ type GrokOAuthAuthURL struct {
 // StartGrokOAuthLogin builds the auth.x.ai PKCE authorization URL. The caller
 // opens it in a browser, signs in, and pastes the resulting (failed-loopback)
 // callback URL back into ExchangeGrokOAuthCode.
-func StartGrokOAuthLogin() (*GrokOAuthAuthURL, error) {
+func StartGrokOAuthLogin(ownerSession string) (*GrokOAuthAuthURL, error) {
+	if ownerSession == "" {
+		return nil, errors.New("grok oauth: browser session required")
+	}
 	grokOAuthCleanupOnce.Do(func() { go grokOAuthCleanupLoop() })
 
 	state, err := grokOAuthRandomHex(32)
@@ -109,6 +113,7 @@ func StartGrokOAuthLogin() (*GrokOAuthAuthURL, error) {
 
 	grokOAuthSessionsMu.Lock()
 	grokOAuthSessions[sessionID] = &GrokOAuthSession{
+		OwnerSession:  ownerSession,
 		State:         state,
 		CodeVerifier:  codeVerifier,
 		CodeChallenge: codeChallenge,
@@ -194,10 +199,11 @@ func grokOAuthHTTPClient(proxyURL string) (*http.Client, error) {
 		return nil, err
 	}
 	if base == nil {
-		return &http.Client{Timeout: grokOAuthHTTPTimeout}, nil
+		base = &http.Client{}
 	}
 	clientCopy := *base
 	clientCopy.Timeout = grokOAuthHTTPTimeout
+	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	return &clientCopy, nil
 }
 
@@ -220,19 +226,20 @@ func grokOAuthPostForm(ctx context.Context, client *http.Client, endpoint string
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("grok oauth: endpoint returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("grok oauth: endpoint returned status %d", resp.StatusCode)
 	}
 	if err := common.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("grok oauth: decode token response: %w", err)
+		return errors.New("grok oauth: invalid token response")
 	}
 	return nil
 }
 
 // ExchangeGrokOAuthCode swaps the pasted callback (or bare code) for a
 // complete Grok subscription channel credential JSON.
-func ExchangeGrokOAuthCode(ctx context.Context, sessionID, input, proxyURL string) (string, error) {
+func ExchangeGrokOAuthCode(ctx context.Context, sessionID, input, proxyURL, ownerSession string) (string, error) {
 	grokOAuthSessionsMu.Lock()
 	session, ok := grokOAuthSessions[sessionID]
+	ok = ok && ownerSession != "" && constantTimeEqual(session.OwnerSession, ownerSession)
 	if ok {
 		delete(grokOAuthSessions, sessionID)
 	}

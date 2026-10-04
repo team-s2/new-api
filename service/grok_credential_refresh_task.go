@@ -59,8 +59,6 @@ func runGrokCredentialAutoRefreshOnce() {
 	ctx := context.Background()
 	now := time.Now()
 
-	var refreshed int
-
 	offset := 0
 	for {
 		var channels []*model.Channel
@@ -105,25 +103,14 @@ func runGrokCredentialAutoRefreshOnce() {
 			}
 
 			refreshCtx, cancel := context.WithTimeout(ctx, grokCredentialRefreshTimeout)
-			newKey, _, err := RefreshGrokChannelCredential(refreshCtx, ch.Id, false)
+			newKey, _, err := refreshGrokChannelCredential(refreshCtx, ch, true)
 			cancel()
 			if err != nil {
 				logger.LogWarn(ctx, fmt.Sprintf("grok credential auto-refresh: channel_id=%d name=%s refresh failed: %v", ch.Id, ch.Name, err))
 				continue
 			}
-			refreshed++
 			logger.LogInfo(ctx, fmt.Sprintf("grok credential auto-refresh: channel_id=%d name=%s refreshed, expires_at=%s", ch.Id, ch.Name, newKey.Expired))
 		}
 	}
 
-	if refreshed > 0 {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.LogWarn(ctx, fmt.Sprintf("grok credential auto-refresh: InitChannelCache panic: %v", r))
-				}
-			}()
-			model.InitChannelCache()
-		}()
-	}
 }

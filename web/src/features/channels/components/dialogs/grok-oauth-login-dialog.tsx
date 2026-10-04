@@ -17,14 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { ExternalLink, Loader2, LogIn } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { handleServerError } from '@/lib/handle-server-error'
+import { createServerError } from '@/lib/server-error-message'
 
 import { exchangeGrokOAuthCode, startGrokOAuthLogin } from '../../api'
 import { CHANNEL_TYPE_GROK_SUB } from '../../constants'
@@ -44,44 +45,62 @@ export function GrokOAuthLoginDialog(props: GrokOAuthLoginDialogProps) {
   const [loadingUrl, setLoadingUrl] = useState(false)
   const [exchanging, setExchanging] = useState(false)
 
+  const flowController = useRef<AbortController | null>(null)
+  const onStartError = useEffectEvent((error: unknown) => {
+    handleServerError(error, t('Failed to start OAuth login'))
+  })
+
   useEffect(() => {
     if (!props.open) return
+    const controller = new AbortController()
+    flowController.current = controller
+    setAuthorizeUrl('')
+    setSessionId('')
     setPasted('')
     setCredential('')
+    setExchanging(false)
     setLoadingUrl(true)
-    startGrokOAuthLogin()
+    startGrokOAuthLogin(controller.signal)
       .then((res) => {
+        if (controller.signal.aborted) return
         if (!res.success || !res.data) {
-          throw new Error(res.message || t('Failed to start OAuth login'))
+          throw createServerError(res)
         }
         setAuthorizeUrl(res.data.authorize_url)
         setSessionId(res.data.session_id)
       })
-      .finally(() => setLoadingUrl(false))
-      .catch((error) => {
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : t('Failed to start OAuth login')
-        )
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingUrl(false)
       })
-  }, [props.open, t])
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) onStartError(error)
+      })
+    return () => controller.abort()
+  }, [props.open])
 
   const handleExchange = async () => {
-    if (exchanging) return
+    const controller = flowController.current
+    if (exchanging || !sessionId || !controller || controller.signal.aborted) {
+      return
+    }
     setExchanging(true)
     try {
-      const res = await exchangeGrokOAuthCode(sessionId, pasted.trim())
+      const res = await exchangeGrokOAuthCode(
+        sessionId,
+        pasted.trim(),
+        controller.signal
+      )
+      if (controller.signal.aborted) return
       if (!res.success || !res.data) {
-        throw new Error(res.message || t('OAuth login failed'))
+        throw createServerError(res, t('OAuth login failed'))
       }
       setCredential(res.data.credential)
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t('OAuth login failed')
-      )
+      if (!controller.signal.aborted) {
+        handleServerError(error, t('OAuth login failed'))
+      }
     } finally {
-      setExchanging(false)
+      if (!controller.signal.aborted) setExchanging(false)
     }
   }
 
@@ -94,9 +113,7 @@ export function GrokOAuthLoginDialog(props: GrokOAuthLoginDialogProps) {
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      title={
-        credential ? t('OAuth login succeeded') : t('Grok OAuth login')
-      }
+      title={credential ? t('OAuth login succeeded') : t('Grok OAuth login')}
       description={t(
         'Log in on x.ai in your browser, then paste the redirected callback URL back here.'
       )}
@@ -157,13 +174,16 @@ export function GrokOAuthLoginDialog(props: GrokOAuthLoginDialogProps) {
             <Textarea
               rows={3}
               placeholder='http://127.0.0.1:56121/callback?code=...'
+              aria-label={t('Step 2: Paste the callback URL')}
               value={pasted}
               onChange={(event) => setPasted(event.target.value)}
             />
             <Button
               type='button'
               onClick={handleExchange}
-              disabled={exchanging || !pasted.trim()}
+              disabled={
+                loadingUrl || !sessionId || exchanging || !pasted.trim()
+              }
             >
               {exchanging ? (
                 <Loader2 className='mr-2 h-4 w-4 animate-spin' />

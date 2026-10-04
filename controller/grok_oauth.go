@@ -24,7 +24,8 @@ type grokOAuthExchangeRequest struct {
 // waits for the redirect to the CLI loopback (127.0.0.1:56121) to fail, copies
 // the address-bar URL, and pastes it into ExchangeGrokOAuthCode.
 func StartGrokOAuthLogin(c *gin.Context) {
-	result, err := service.StartGrokOAuthLogin()
+	c.Header("Cache-Control", "no-store")
+	result, err := service.StartGrokOAuthLogin(c.GetString("session_id"))
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -42,6 +43,7 @@ func StartGrokOAuthLogin(c *gin.Context) {
 // ExchangeGrokOAuthCode swaps the pasted loopback callback URL (or bare
 // authorization code) for a complete Grok Subscription channel credential.
 func ExchangeGrokOAuthCode(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	var request grokOAuthExchangeRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.ApiError(c, err)
@@ -59,7 +61,7 @@ func ExchangeGrokOAuthCode(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
-	credential, err := service.ExchangeGrokOAuthCode(ctx, request.SessionID, request.Input, "")
+	credential, err := service.ExchangeGrokOAuthCode(ctx, request.SessionID, request.Input, "", c.GetString("session_id"))
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": err.Error()})
 		return
@@ -85,7 +87,7 @@ func RefreshGrokChannelCredential(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
 	defer cancel()
 
-	oauthKey, ch, err := service.RefreshGrokChannelCredential(ctx, channelId, true)
+	oauthKey, ch, err := service.RefreshGrokChannelCredential(ctx, channelId)
 	if err != nil {
 		common.SysError("failed to refresh grok channel credential: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "刷新凭证失败，请稍后重试"})

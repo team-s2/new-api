@@ -1,33 +1,38 @@
 package groksub
 
 import (
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
-// adaptGrokUsage applies xAI-specific usage semantics: xAI reports visible
-// output tokens and reasoning tokens separately, while OpenAI semantics fold
-// reasoning into completion tokens. When total != input + output the reasoning
-// tokens were NOT folded, so add them back (bounded by the unaccounted
-// remainder) to keep billing consistent with OpenAI-compatible clients.
-func adaptGrokUsage(usage any) any {
-	u, ok := usage.(*dto.Usage)
-	if !ok || u == nil {
-		return usage
+// xAI can exclude reasoning from output_tokens while including it in total_tokens.
+// Normalize at the wire boundary so client usage, conversion snapshots, and local
+// settlement all see the same output count, before shared handlers recompute totals.
+func normalizeGrokUsage(payload []byte, path string) ([]byte, error) {
+	raw := gjson.GetBytes(payload, path)
+	if !raw.Exists() || raw.Type == gjson.Null {
+		return payload, nil
 	}
-	reasoning := u.CompletionTokenDetails.ReasoningTokens
-	if reasoning <= 0 {
-		return usage
+	var usage dto.Usage
+	if err := common.Unmarshal([]byte(raw.Raw), &usage); err != nil {
+		return nil, err
 	}
-	input := u.PromptTokens
-	output := u.CompletionTokens
-	if u.TotalTokens != input+output && u.TotalTokens > input+output {
-		unaccounted := u.TotalTokens - input - output
-		add := reasoning
-		if add > unaccounted {
-			add = unaccounted
-		}
-		u.CompletionTokens += add
-		u.TotalTokens = input + u.CompletionTokens
+	if usage.OutputTokensDetails == nil {
+		return payload, nil
 	}
-	return u
+	reasoning := usage.OutputTokensDetails.ReasoningTokens
+	input, output, total := usage.InputTokens, usage.OutputTokens, usage.TotalTokens
+	// Subtract only after validating non-negative operands and their ordering;
+	// output+extra stays bounded by total-input, even at the integer boundary.
+	if reasoning <= 0 || input < 0 || output < 0 || total < input || total-input <= output {
+		return payload, nil
+	}
+	extra := min(reasoning, total-input-output)
+	patched, err := sjson.SetBytes(payload, path+".output_tokens", output+extra)
+	if err != nil {
+		return nil, err
+	}
+	return sjson.SetBytes(patched, path+".total_tokens", input+output+extra)
 }

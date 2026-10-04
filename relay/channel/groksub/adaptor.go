@@ -40,28 +40,34 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
 
-	oauthKey, err := ParseOAuthKey(strings.TrimSpace(info.ApiKey))
+	return ApplyOAuthHeaders(*req, info.ApiKey, info.ChannelBaseUrl)
+}
+
+// ApplyOAuthHeaders authenticates relay and model-list requests with the same
+// pinned CLI identity; the credential JSON itself is never sent upstream.
+func ApplyOAuthHeaders(header http.Header, credential, baseURL string) error {
+	oauthKey, err := ParseOAuthKey(strings.TrimSpace(credential))
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(oauthKey.AccessToken) == "" {
 		return errors.New("grok subscription channel: access_token is required")
 	}
-	req.Set("Authorization", "Bearer "+strings.TrimSpace(oauthKey.AccessToken))
+	header.Set("Authorization", "Bearer "+strings.TrimSpace(oauthKey.AccessToken))
 
 	// Stamp the pinned CLI identity. The gateway fingerprints the client
 	// string, so inbound client UAs must never be forwarded.
-	req.Set("User-Agent", CLIUserAgent())
-	req.Set("x-grok-client-version", cliClientVersion)
-	req.Set("x-grok-client-identifier", cliClientIdentifier)
-	req.Set("X-Grok-Client-Mode", cliClientMode)
-	if strings.Contains(strings.ToLower(req.Get("Host")), cliProxyHost) ||
-		strings.Contains(strings.ToLower(info.ChannelBaseUrl), cliProxyHost) {
-		req.Set("X-XAI-Token-Auth", cliTokenAuth)
+	header.Set("User-Agent", CLIUserAgent())
+	header.Set("x-grok-client-version", cliClientVersion)
+	header.Set("x-grok-client-identifier", cliClientIdentifier)
+	header.Set("X-Grok-Client-Mode", cliClientMode)
+	if strings.Contains(strings.ToLower(header.Get("Host")), cliProxyHost) ||
+		strings.Contains(strings.ToLower(baseURL), cliProxyHost) {
+		header.Set("X-XAI-Token-Auth", cliTokenAuth)
 	}
 
-	req.Set("Content-Type", "application/json")
-	req.Set("Accept", "application/json, text/event-stream")
+	header.Set("Content-Type", "application/json")
+	header.Set("Accept", "application/json, text/event-stream")
 	return nil
 }
 
@@ -309,7 +315,7 @@ func grokSupportedToolType(toolType string) bool {
 func fixGrokFunctionTool(t map[string]any) {
 	fn, _ := t["function"].(map[string]any)
 	if fn == nil {
-		return
+		fn = t
 	}
 	params, ok := fn["parameters"]
 	if !ok || params == nil {
@@ -398,16 +404,19 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
-	return channel.DoApiRequest(a, c, info, requestBody)
+	resp, err := channel.DoApiRequest(a, c, info, requestBody)
+	if err != nil || resp == nil || resp.Body == nil || resp.StatusCode != http.StatusOK {
+		return resp, err
+	}
+	resp.Body = newGrokResponseBody(resp.Body, strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream"))
+	resp.ContentLength = -1
+	resp.Header.Del("Content-Length")
+	return resp, nil
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
 	switch info.RelayMode {
 	case relayconstant.RelayModeResponses:
-		// The CLI gateway injects billing ping frames that strict Responses
-		// clients reject; filter them out before the shared handlers scan
-		// the body.
-		resp.Body = newGrokPingFilterBody(resp.Body)
 		if info.IsStream {
 			usage, err = openai.OaiResponsesStreamHandler(c, info, resp)
 		} else {
@@ -416,7 +425,7 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		if err != nil {
 			return nil, err
 		}
-		return adaptGrokUsage(usage), nil
+		return usage, nil
 	default:
 		return nil, types.NewError(errors.New("grok subscription channel: endpoint not supported"), types.ErrorCodeInvalidRequest)
 	}
