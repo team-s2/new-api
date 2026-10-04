@@ -103,7 +103,8 @@ func SupportsResponsesCompact(channelType, apiType int) bool {
 		constant.APITypeCodex,
 		constant.APITypeAdvancedCustom,
 		constant.APITypeSub2API,
-		constant.APITypeNewAPI:
+		constant.APITypeNewAPI,
+		constant.APITypeGrokSub:
 		return true
 	default:
 		return false

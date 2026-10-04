@@ -4,20 +4,10 @@ import "strings"
 
 // Grok subscription channel: relays OpenAI Responses-protocol traffic to the
 // official Grok CLI gateway (cli-chat-proxy.grok.com) using OAuth tokens from
-// the xAI PKCE flow. Upstream identity constants mirror the official Grok CLI
-// client; the gateway fingerprints the client string, so inbound client UAs
-// must never be forwarded.
+// the xAI PKCE flow. The pinned CLI identity lives in service.ApplyGrokCLIHeaders.
 
 const (
 	ChannelName = "groksub"
-
-	// cliClientVersion is the pinned Grok CLI version reported upstream.
-	// Keep in sync with https://x.ai/cli/stable when bumping.
-	cliClientVersion    = "1.0.46"
-	cliClientIdentifier = "grok-pager"
-	cliClientMode       = "interactive"
-	cliTokenAuth        = "xai-grok-cli"
-	cliProxyHost        = "cli-chat-proxy.grok.com"
 
 	// DefaultTextModel is the built-in fallback for empty models and the
 	// bare "grok" aliases.

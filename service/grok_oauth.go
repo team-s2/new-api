@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +37,49 @@ const (
 	grokOAuthSessionTTL   = 10 * time.Minute
 	grokOAuthHTTPTimeout  = 30 * time.Second
 )
+
+// Pinned official Grok CLI identity. cli-chat-proxy fingerprints the client
+// string, so relay, model-list and billing traffic all stamp the same values
+// and never forward inbound client user agents. Keep GrokCLIVersion in sync
+// with https://x.ai/cli/stable when bumping.
+const (
+	GrokCLIVersion          = "1.0.46"
+	GrokCLIProxyHost        = "cli-chat-proxy.grok.com"
+	grokCLIClientIdentifier = "grok-pager"
+	grokCLIClientMode       = "interactive"
+	grokCLITokenAuth        = "xai-grok-cli"
+)
+
+// GrokCLIUserAgent mirrors the official CLI format:
+// grok-pager/{version} grok-shell/{version} ({platform}; {arch}).
+func GrokCLIUserAgent() string {
+	platform, arch := runtime.GOOS, runtime.GOARCH
+	if platform == "darwin" {
+		platform = "macos"
+	}
+	switch arch {
+	case "amd64":
+		arch = "x86_64"
+	case "arm64":
+		arch = "aarch64"
+	case "386":
+		arch = "x86"
+	}
+	return "grok-pager/" + GrokCLIVersion + " grok-shell/" + GrokCLIVersion + " (" + platform + "; " + arch + ")"
+}
+
+// ApplyGrokCLIHeaders stamps the pinned CLI identity. The token-auth and
+// authenticate-response markers are only meaningful to cli-chat-proxy.
+func ApplyGrokCLIHeaders(header http.Header, baseURL string) {
+	header.Set("User-Agent", GrokCLIUserAgent())
+	header.Set("x-grok-client-version", GrokCLIVersion)
+	header.Set("x-grok-client-identifier", grokCLIClientIdentifier)
+	header.Set("x-grok-client-mode", grokCLIClientMode)
+	if parsed, err := url.Parse(strings.TrimSpace(baseURL)); err == nil && strings.EqualFold(parsed.Hostname(), GrokCLIProxyHost) {
+		header.Set("X-XAI-Token-Auth", grokCLITokenAuth)
+		header.Set("x-authenticateresponse", "authenticate-response")
+	}
+}
 
 // grokOAuthTokenEndpoint is a var so tests can point it at a local server.
 var grokOAuthTokenEndpoint = grokOAuthTokenURL
