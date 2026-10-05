@@ -98,6 +98,73 @@ var (
 	grokOAuthSessions   = make(map[string]*GrokOAuthSession)
 )
 
+const grokOAuthRedisKeyPrefix = "new-api:grok-oauth:"
+
+const grokOAuthConsumeScript = `
+local owner = redis.call('HGET', KEYS[1], 'owner_session')
+if not owner or owner ~= ARGV[1] then
+  return nil
+end
+local payload = redis.call('HGET', KEYS[1], 'payload')
+redis.call('DEL', KEYS[1])
+return payload
+`
+
+func grokOAuthRedisKey(sessionID string) string {
+	return grokOAuthRedisKeyPrefix + sessionID
+}
+
+func storeGrokOAuthSession(sessionID string, session *GrokOAuthSession) {
+	grokOAuthSessionsMu.Lock()
+	grokOAuthSessions[sessionID] = session
+	grokOAuthSessionsMu.Unlock()
+
+	if !common.RedisEnabled || common.RDB == nil {
+		return
+	}
+	payload, err := common.Marshal(session)
+	if err != nil {
+		common.SysError("failed to marshal grok oauth session: " + err.Error())
+		return
+	}
+	ctx := context.Background()
+	key := grokOAuthRedisKey(sessionID)
+	pipe := common.RDB.TxPipeline()
+	pipe.HSet(ctx, key, "owner_session", session.OwnerSession, "payload", string(payload))
+	pipe.Expire(ctx, key, grokOAuthSessionTTL)
+	if _, err := pipe.Exec(ctx); err != nil {
+		common.SysError("failed to store grok oauth session in Redis: " + err.Error())
+	}
+}
+
+func consumeGrokOAuthSession(sessionID, ownerSession string) (*GrokOAuthSession, bool) {
+	if common.RedisEnabled && common.RDB != nil && ownerSession != "" {
+		result, err := common.RDB.Eval(context.Background(), grokOAuthConsumeScript, []string{grokOAuthRedisKey(sessionID)}, ownerSession).Result()
+		if err != nil {
+			common.SysError("failed to consume grok oauth session from Redis: " + err.Error())
+		} else if payload, ok := result.(string); ok && payload != "" {
+			var session GrokOAuthSession
+			if err := common.Unmarshal([]byte(payload), &session); err != nil {
+				common.SysError("failed to unmarshal grok oauth session from Redis: " + err.Error())
+			} else {
+				grokOAuthSessionsMu.Lock()
+				delete(grokOAuthSessions, sessionID)
+				grokOAuthSessionsMu.Unlock()
+				return &session, true
+			}
+		}
+	}
+
+	grokOAuthSessionsMu.Lock()
+	defer grokOAuthSessionsMu.Unlock()
+	session, ok := grokOAuthSessions[sessionID]
+	if !ok || ownerSession == "" || !constantTimeEqual(session.OwnerSession, ownerSession) {
+		return nil, false
+	}
+	delete(grokOAuthSessions, sessionID)
+	return session, true
+}
+
 func grokOAuthCleanupLoop() {
 	for {
 		time.Sleep(time.Minute)
@@ -155,15 +222,13 @@ func StartGrokOAuthLogin(ownerSession string) (*GrokOAuthAuthURL, error) {
 		return nil, fmt.Errorf("grok oauth: generate session id: %w", err)
 	}
 
-	grokOAuthSessionsMu.Lock()
-	grokOAuthSessions[sessionID] = &GrokOAuthSession{
+	storeGrokOAuthSession(sessionID, &GrokOAuthSession{
 		OwnerSession:  ownerSession,
 		State:         state,
 		CodeVerifier:  codeVerifier,
 		CodeChallenge: codeChallenge,
 		CreatedAt:     time.Now(),
-	}
-	grokOAuthSessionsMu.Unlock()
+	})
 
 	params := url.Values{}
 	params.Set("response_type", "code")
@@ -281,14 +346,8 @@ func grokOAuthPostForm(ctx context.Context, client *http.Client, endpoint string
 // ExchangeGrokOAuthCode swaps the pasted callback (or bare code) for a
 // complete Grok subscription channel credential JSON.
 func ExchangeGrokOAuthCode(ctx context.Context, sessionID, input, proxyURL, ownerSession string) (string, error) {
-	grokOAuthSessionsMu.Lock()
-	session, ok := grokOAuthSessions[sessionID]
-	ok = ok && ownerSession != "" && constantTimeEqual(session.OwnerSession, ownerSession)
-	if ok {
-		delete(grokOAuthSessions, sessionID)
-	}
-	grokOAuthSessionsMu.Unlock()
-	if !ok || time.Since(session.CreatedAt) > grokOAuthSessionTTL {
+	session, ok := consumeGrokOAuthSession(sessionID, ownerSession)
+	if !ok || session == nil || time.Since(session.CreatedAt) > grokOAuthSessionTTL {
 		return "", errors.New("grok oauth: session not found or expired, please restart OAuth login")
 	}
 

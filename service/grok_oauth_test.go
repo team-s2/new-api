@@ -8,7 +8,9 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -78,6 +80,38 @@ func TestGrokOAuthAuthorizeURLShape(t *testing.T) {
 	assert.NotEmpty(t, query.Get("state"))
 	assert.NotEmpty(t, query.Get("code_challenge"))
 	assert.NotEmpty(t, query.Get("nonce"))
+}
+
+func TestGrokOAuthSessionUsesRedisAcrossWorkers(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	oldRedisEnabled, oldRDB := common.RedisEnabled, common.RDB
+	common.RedisEnabled = true
+	common.RDB = client
+	t.Cleanup(func() {
+		common.RedisEnabled = oldRedisEnabled
+		common.RDB = oldRDB
+		grokOAuthSessionsMu.Lock()
+		grokOAuthSessions = make(map[string]*GrokOAuthSession)
+		grokOAuthSessionsMu.Unlock()
+		_ = client.Close()
+	})
+
+	flow, err := StartGrokOAuthLogin("browser-session")
+	require.NoError(t, err)
+
+	// Simulate the completion request arriving at another worker.
+	grokOAuthSessionsMu.Lock()
+	delete(grokOAuthSessions, flow.SessionID)
+	grokOAuthSessionsMu.Unlock()
+
+	session, ok := consumeGrokOAuthSession(flow.SessionID, "browser-session")
+	require.True(t, ok)
+	require.NotNil(t, session)
+	assert.Equal(t, "browser-session", session.OwnerSession)
+
+	_, ok = consumeGrokOAuthSession(flow.SessionID, "browser-session")
+	assert.False(t, ok, "OAuth sessions must be single-use")
 }
 
 func TestBuildGrokOAuthKeyClaims(t *testing.T) {
@@ -224,6 +258,9 @@ func TestGrokCredentialRefreshDatabaseMatrix(t *testing.T) {
 }
 
 func TestGrokOAuthExchangeSessionSecurity(t *testing.T) {
+	oldRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() { common.RedisEnabled = oldRedisEnabled })
 	InitHttpClient()
 	oldEndpoint := grokOAuthTokenEndpoint
 	t.Cleanup(func() { grokOAuthTokenEndpoint = oldEndpoint })
