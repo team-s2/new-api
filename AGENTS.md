@@ -3,6 +3,7 @@
 - 支持 Codex channel 的 GPT 图像接口，包括 `gpt-image-2` 图像生成/编辑中继行为、校验、流式处理、计费防护和回归测试。
 - GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
 - GitHub OAuth 支持组织和永久用户 ID 白名单，以及可配置的管理员／超级管理员自动提升；配置和权限语义见 `docs/github-oauth-access.md`。
+- 支持 BigModel Coding Plan 和 Grok Subscription
 
 本仓库的例行维护流程：
 
@@ -10,6 +11,7 @@
 - 将本 fork rebase 到最新的上游 tag
   - 保留本 fork 的增量变更
   - 当上游实现了本 fork 的增量变更时，直接使用上游的实现
+  - 更新 VERSION 中的上游版本号
 - 运行相关的后端/前端测试或构建
 - 提交并 force push
 
