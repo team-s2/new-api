@@ -1,8 +1,8 @@
 本仓库是上游 `QuantumNous/new-api` 的 fork。变更如下：
 
-- 支持 Codex channel 的 GPT 图像接口，包括 `gpt-image-2` 图像生成/编辑中继行为、校验、流式处理、计费防护和回归测试。
 - GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
 - GitHub OAuth 支持组织和永久用户 ID 白名单，以及可配置的管理员／超级管理员自动提升；配置和权限语义见 `docs/ai/2610040349-github-oauth-access.md`。
+- 支持 BigModel Coding Plan 和 Grok Subscription。
 
 本仓库的例行维护流程：
 
@@ -10,8 +10,16 @@
 - 将本 fork rebase 到最新的上游 tag
   - 保留本 fork 的增量变更
   - 当上游实现了本 fork 的增量变更时，直接使用上游的实现
+  - 更新 VERSION 中的上游版本号
 - 运行相关的后端/前端测试或构建
 - 提交并 force push
+
+开发约束：
+
+- 注意保持代码可读性、易维护性，维持良好代码结构
+- commit msg 请使用 angular 规范编写
+- 不要添加新单元测试，可以在开发过程中编写单元测试来测试用，但测试完成后需要删掉
+- 对于较大的重构和变更，需要编写文档和开发日志，统一放置在 `docs/ai` 目录下，按日期和主题命名，形如 `YYMMDDHHmm-<主题>.md`，并通知用户有新增 AI 文档，让用户决定是否保留
 
 # AGENTS.md — Project Conventions for new-api
 
