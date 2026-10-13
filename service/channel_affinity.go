@@ -725,11 +725,16 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, other *model.LogOther) {
 }
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {
-	if channelID <= 0 {
+	if c == nil || channelID <= 0 {
+		return
+	}
+	// HTTP 200 只代表流已开始；协议失败不得创建、迁移或续期会话绑定。
+	policy := RequestPolicy(c)
+	if !policy.OutcomeRecorded || !policy.Successful {
 		return
 	}
 	setting := operation_setting.GetChannelAffinitySetting()
-	if RequestPolicy(c).SessionMode == "off" {
+	if policy.SessionMode == "off" {
 		return
 	}
 	if setting == nil || !setting.Enabled {

@@ -182,6 +182,7 @@ func TestRequestPolicyRoutingDatabaseMatrix(t *testing.T) {
 							_, found := service.GetPreferredChannelByAffinity(seed, "policy-test", "default")
 							require.False(t, found)
 							seed.Set("channel_id", 1)
+							service.MarkRequestPolicySuccess(seed, nil)
 							service.RecordChannelAffinity(seed, 1)
 							t.Cleanup(func() { service.ClearCurrentChannelAffinityCache(seed) })
 							bound, found := service.GetPreferredChannelByAffinity(seed, "policy-test", "default")

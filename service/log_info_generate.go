@@ -159,15 +159,31 @@ func appendStreamStatus(relayInfo *relaycommon.RelayInfo, other *model.LogOther)
 	}
 	ss := relayInfo.StreamStatus
 	status := "ok"
-	if !ss.IsNormalEnd() || ss.HasErrors() || ss.ResponseFailed() {
+	if !ss.IsSuccessful() {
 		status = "error"
 	}
 	streamInfo := map[string]any{
 		"status":     status,
 		"end_reason": string(ss.EndReason),
 	}
-	if outcome := ss.ResponseOutcome(); outcome != "" {
-		streamInfo["response_status"] = outcome
+	outcome := ss.OutcomeSnapshot()
+	if outcome.Response != "" {
+		streamInfo["response_status"] = string(outcome.Response)
+	}
+	if outcome.ExpectsTerminal && outcome.Response == relaycommon.ResponseOutcomeUnknown {
+		streamInfo["missing_terminal"] = true
+	}
+	if outcome.ErrorCode != "" {
+		streamInfo["error_code"] = outcome.ErrorCode
+	}
+	if outcome.ErrorType != "" {
+		streamInfo["error_type"] = outcome.ErrorType
+	}
+	if outcome.ErrorStatus != 0 {
+		streamInfo["error_status"] = outcome.ErrorStatus
+	}
+	if outcome.IncompleteReason != "" {
+		streamInfo["incomplete_reason"] = outcome.IncompleteReason
 	}
 	if ss.EndError != nil {
 		streamInfo["end_error"] = ss.EndError.Error()

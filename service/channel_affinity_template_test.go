@@ -12,10 +12,14 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/cachex"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relaydto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -449,6 +453,7 @@ func TestSessionRulesInheritOrOverrideGlobalDefault(t *testing.T) {
 				assert.EqualValues(t, 0, transformed["temperature"])
 				if expected == "off" {
 					ctx.Set("channel_id", 9)
+					MarkRequestPolicySuccess(ctx, nil)
 					RecordChannelAffinity(ctx, 9)
 					cached, found, err := cache.Get(cacheKey)
 					require.NoError(t, err)
@@ -463,5 +468,127 @@ func TestSessionRulesInheritOrOverrideGlobalDefault(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// 覆盖 HTTP 200 的流内失败：新建、迁移和同渠道续期必须服从协议结果。
+func TestChannelAffinityRequiresSuccessfulOutcome(t *testing.T) {
+	setting := operation_setting.GetChannelAffinitySetting()
+	previousSetting := *setting
+	previousCache := getChannelAffinityCache()
+	t.Cleanup(func() { *setting = previousSetting; channelAffinityCache = previousCache })
+	setting.Enabled = true
+	setting.SwitchOnSuccess = true
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { assert.NoError(t, client.Close()) })
+	channelAffinityCache = cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{
+		Namespace: cachex.Namespace(channelAffinityCacheNamespace), Redis: client, RedisCodec: cachex.IntCodec{},
+	})
+	for _, tc := range []struct {
+		name                                     string
+		events                                   []string
+		end                                      relaycommon.StreamEndReason
+		unobserved, nonstream, legacy, softError bool
+		successful                               bool
+		code, errorType, incomplete              string
+	}{
+		{name: "completed", events: []string{`{"type":"response.completed"}`}, successful: true},
+		{name: "overloaded", events: []string{`{"type":"response.failed","response":{"error":{"code":"server_is_overloaded","type":"server_error","message":"private upstream message"}}}`}, code: "server_is_overloaded", errorType: "server_error"},
+		{name: "top-level error", events: []string{`{"type":"error","code":"rate_limit_exceeded"}`}, code: "rate_limit_exceeded"},
+		{name: "failure then completed", events: []string{`{"type":"response.failed"}`, `{"type":"response.completed"}`}},
+		{name: "completed then failure", events: []string{`{"type":"response.completed"}`, `{"type":"response.failed"}`}},
+		{name: "incomplete", events: []string{`{"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"}}}`}, incomplete: "max_output_tokens"},
+		{name: "cancelled", events: []string{`{"type":"response.cancelled"}`}},
+		{name: "EOF without terminal"},
+		{name: "DONE without terminal", end: relaycommon.StreamEndReasonDone},
+		{name: "client disconnected", end: relaycommon.StreamEndReasonClientGone},
+		{name: "scanner error", end: relaycommon.StreamEndReasonScannerErr},
+		{name: "parse error then completed", events: []string{`{"type":"response.completed"}`}, softError: true},
+		{name: "nonstream completed", nonstream: true, successful: true},
+		{name: "legacy protocol without terminal tracking", legacy: true, successful: true},
+		{name: "handler did not report outcome", unobserved: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, bound := range []int{0, 21, 24} {
+				t.Run(fmt.Sprintf("existing=%d", bound), func(t *testing.T) {
+					key := t.Name()
+					fullKey := channelAffinityCacheNamespace + ":" + key
+					ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{CacheKey: fullKey, TTLSeconds: 3600})
+					ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+					ctx.Writer.WriteHeader(http.StatusOK)
+					ctx.Set("channel_id", 24)
+					state := RequestPolicy(ctx)
+					state.SessionMode = "prefer"
+					state.BeginAttempt(&model.Channel{Id: 24}, "default")
+					if bound != 0 {
+						require.NoError(t, channelAffinityCache.SetWithTTL(key, bound, time.Minute))
+						server.FastForward(10 * time.Second)
+					}
+					var stream *relaycommon.StreamStatus
+					if !tc.nonstream {
+						stream = relaycommon.NewStreamStatus()
+						if !tc.legacy {
+							stream.RequireTerminal()
+						}
+						info := &relaycommon.RelayInfo{IsStream: true, StreamStatus: stream}
+						for _, raw := range tc.events {
+							var event relaydto.ResponsesStreamResponse
+							require.NoError(t, common.UnmarshalJsonStr(raw, &event))
+							ObserveResponsesOutcome(info, &event)
+						}
+						end := tc.end
+						if end == "" {
+							end = relaycommon.StreamEndReasonEOF
+						}
+						stream.SetEndReason(end, nil)
+						if tc.softError {
+							stream.RecordError("invalid event")
+						}
+						other := model.NewLogOther()
+						appendStreamStatus(info, other)
+						logged := other.Snapshot()["stream_status"].(map[string]any)
+						expectedStatus := "error"
+						if tc.successful {
+							expectedStatus = "ok"
+						}
+						assert.Equal(t, expectedStatus, logged["status"])
+						if tc.code != "" {
+							assert.Equal(t, tc.code, logged["error_code"])
+						}
+						if tc.errorType != "" {
+							assert.Equal(t, tc.errorType, logged["error_type"])
+						}
+						if tc.incomplete != "" {
+							assert.Equal(t, tc.incomplete, logged["incomplete_reason"])
+						}
+						if len(tc.events) == 0 && !tc.legacy {
+							assert.Equal(t, true, logged["missing_terminal"])
+						}
+						encoded, err := common.Marshal(other.Snapshot())
+						require.NoError(t, err)
+						assert.NotContains(t, string(encoded), "private upstream message")
+					}
+					if !tc.unobserved {
+						MarkRequestPolicySuccess(ctx, stream)
+					}
+					RecordChannelAffinity(ctx, 21) // 中间件传入首次选中的渠道，成功后按最终渠道写入。
+					value, found, err := channelAffinityCache.Get(key)
+					require.NoError(t, err)
+					assert.Equal(t, tc.successful, state.Successful)
+					if tc.successful {
+						assert.True(t, found)
+						assert.Equal(t, 24, value)
+						assert.Equal(t, time.Hour, server.TTL(fullKey))
+					} else if bound != 0 {
+						assert.True(t, found)
+						assert.Equal(t, bound, value)
+						assert.Equal(t, 50*time.Second, server.TTL(fullKey), "失败不能续期已有绑定")
+					} else {
+						assert.False(t, found, "失败不能创建绑定")
+					}
+				})
+			}
+		})
 	}
 }
