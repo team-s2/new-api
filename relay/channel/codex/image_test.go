@@ -15,12 +15,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
-	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -258,7 +258,7 @@ func TestCodexImageRequestHeaders(t *testing.T) {
 		wantOriginator string
 		wantAccept     string
 	}{
-		{name: "json defaults", wantOriginator: codexImageOriginator, wantAccept: "application/json"},
+		{name: "json defaults", wantOriginator: codexOriginator, wantAccept: "application/json"},
 		{name: "stream preserves originator", stream: true, originator: "custom-originator", wantOriginator: "custom-originator", wantAccept: "text/event-stream"},
 	}
 	for _, test := range tests {
@@ -278,6 +278,7 @@ func TestCodexImageRequestHeaders(t *testing.T) {
 				ChannelMeta: &relaycommon.ChannelMeta{
 					ApiKey: `{"access_token":"oauth-token","account_id":"account-123"}`,
 				},
+				TokenKey: "sk-test-token",
 			}
 
 			err := (&Adaptor{}).SetupRequestHeader(c, &header, info)
@@ -285,7 +286,7 @@ func TestCodexImageRequestHeaders(t *testing.T) {
 			assert.Equal(t, "Bearer oauth-token", header.Get("Authorization"))
 			assert.Equal(t, "account-123", header.Get("Chatgpt-Account-Id"))
 			assert.Equal(t, test.wantOriginator, header.Get("Originator"))
-			assert.NotEmpty(t, header.Get("Session_id"))
+			assert.NotEmpty(t, header.Get("session_id"))
 			assert.Equal(t, codexUserAgent, header.Get("User-Agent"))
 			assert.Equal(t, "application/json", header.Get("Content-Type"))
 			assert.Equal(t, test.wantAccept, header.Get("Accept"))

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -398,7 +400,15 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	}
 	targetHeader.Set("Content-Type", c.Request.Header.Get("Content-Type"))
 	dialer := *websocket.DefaultDialer
-	if info.ChannelSetting.Proxy != "" {
+	wssURL, _ := url.Parse(fullRequestURL)
+	if service.UsesChromeTLSFingerprint(wssURL) {
+		// The fingerprint dialer resolves channel proxy > env proxy > direct
+		// itself; gorilla's Proxy hook would bypass the fingerprinted TLS.
+		dialer.Proxy = nil
+		dialer.NetDialTLSContext = func(ctx context.Context, _, addr string) (net.Conn, error) {
+			return service.DialChromeFingerprintTLS(ctx, info.ChannelSetting.Proxy, addr)
+		}
+	} else if info.ChannelSetting.Proxy != "" {
 		proxyURL, _, proxyErr := common2.ParseProxyURLRuntime(info.ChannelSetting.Proxy)
 		if proxyErr != nil {
 			return nil, proxyErr
@@ -521,6 +531,11 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
+	}
+	// chatgpt.com rejects the default Go ClientHello; use the Chrome TLS
+	// fingerprint transport for it (standard transport for other hosts).
+	if service.UsesChromeTLSFingerprint(req.URL) {
+		client = service.GetChromeFingerprintHTTPClient(info.ChannelSetting.Proxy)
 	}
 	// Clients are cached and shared across channels, so override redirect
 	// behavior on a shallow copy instead of mutating the cached client. This

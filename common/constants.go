@@ -189,6 +189,11 @@ var GeminiSafetySetting string
 // https://docs.cohere.com/docs/safety-modes Type; NONE/CONTEXTUAL/STRICT
 var CohereSafetySetting string
 
+// CodexUserAgentOverride overrides the User-Agent new-api sends to the Codex
+// chatgpt.com backend for every codex request path. Empty keeps the built-in
+// codex-tui identity.
+var CodexUserAgentOverride string
+
 const (
 	RequestIdKey         = "X-Oneapi-Request-Id"
 	UpstreamRequestIdKey = "X-Upstream-Request-Id"

@@ -151,11 +151,14 @@ func ConsumeCodexWhamRateLimitResetCredit(
 	return resp.StatusCode, body, nil
 }
 
+// codexWhamOriginator matches the codex-tui originator used across every codex path.
+const codexWhamOriginator = "codex-tui"
+
 func setCodexWhamRequestHeaders(req *http.Request, accessToken string, accountID string) {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("chatgpt-account-id", accountID)
 	req.Header.Set("Accept", "application/json")
 	if req.Header.Get("originator") == "" {
-		req.Header.Set("originator", "codex_cli_rs")
+		req.Header.Set("originator", codexWhamOriginator)
 	}
 }

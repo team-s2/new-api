@@ -3,7 +3,8 @@
 - 支持 Codex channel 的 GPT 图像接口，包括 `gpt-image-2` 图像生成/编辑中继行为、校验、流式处理、计费防护和回归测试。
 - GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
 - GitHub OAuth 支持组织和永久用户 ID 白名单，以及可配置的管理员／超级管理员自动提升；配置和权限语义见 `docs/github-oauth-access.md`。
-- 支持 BigModel Coding Plan 和 Grok Subscription
+- 支持 BigModel Coding Plan 和 Grok Subscription。
+- Codex 渠道模拟官方 codex-tui 客户端：chatgpt.com 走 Chrome TLS 指纹（uTLS）、全路径统一 codex-tui UA/originator（UA 可用 `CODEX_USER_AGENT` 覆盖）、稳定 session id 与 `prompt_cache_key` 联动、补齐 CLI 必带 body 字段、原生 codex 头透传；设计见 `docs/channel/codex-client-compat.md`。
 
 本仓库的例行维护流程：
 

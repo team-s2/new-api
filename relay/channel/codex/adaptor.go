@@ -112,6 +112,27 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	request.Temperature = nil
 	request.FrequencyPenalty = nil
 	request.PresencePenalty = nil
+
+	// The native CLI always advertises the fields below; supply them so the
+	// upstream treats the request as a genuine codex-tui call.
+	request.Include = canonicalCodexInclude(request.Include, request.Tools)
+	if !isCodexResponsesLiteRequest(c, &request) {
+		request.ParallelToolCalls = json.RawMessage("true")
+		if !strings.HasSuffix(strings.TrimSpace(info.UpstreamModelName), "spark") {
+			request.Tools = ensureCodexImageGenerationTool(request.Tools)
+		}
+	}
+	request.Input = convertSystemRoleToDeveloper(request.Input)
+
+	// Session continuity: keep the client-supplied prompt_cache_key when
+	// present and derive a stable one from the API token otherwise. The
+	// affinity rule keys channel stickiness on prompt_cache_key, so the
+	// supplemented value also pins the request to one channel.
+	if sessionID := resolveCodexSessionID(c, info); sessionID != "" {
+		if key, err := common.Marshal(sessionID); err == nil {
+			request.PromptCacheKey = key
+		}
+	}
 	return request, nil
 }
 
@@ -201,21 +222,28 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 	req.Set("chatgpt-account-id", accountID)
 
 	isImageRequest := info.RelayMode == relayconstant.RelayModeImagesGenerations || info.RelayMode == relayconstant.RelayModeImagesEdits
+
+	// Native codex-tui headers the upstream expects on every path: pass the
+	// client's values through (a real codex CLI client sends them), otherwise
+	// supply the codex-tui defaults.
+	passthroughCodexNativeHeaders(c, req)
+	if req.Get("User-Agent") == "" {
+		req.Set("User-Agent", CodexUserAgent())
+	}
+	if req.Get("originator") == "" {
+		req.Set("originator", codexOriginator)
+	}
+	if sessionID := resolveCodexSessionID(c, info); sessionID != "" {
+		if req.Get("Session_id") == "" && req.Get("Session-Id") == "" {
+			req.Set("session_id", sessionID)
+		}
+	}
+
 	if isImageRequest {
 		req.Del("OpenAI-Beta")
-		req.Set("User-Agent", codexUserAgent)
-		if req.Get("Session_id") == "" {
-			req.Set("Session_id", common.GetUUID())
-		}
-		if req.Get("originator") == "" {
-			req.Set("originator", codexImageOriginator)
-		}
 	} else {
 		if req.Get("OpenAI-Beta") == "" {
 			req.Set("OpenAI-Beta", "responses=experimental")
-		}
-		if req.Get("originator") == "" {
-			req.Set("originator", "codex_cli_rs")
 		}
 		if info.IsChannelTest && isCodexResponsesLiteModel(info.UpstreamModelName) {
 			req.Set("X-OpenAI-Internal-Codex-Responses-Lite", "true")
