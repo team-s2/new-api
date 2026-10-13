@@ -203,6 +203,8 @@ func TestChannelAffinityRetryPriorities(t *testing.T) {
 						if tc.binding != 0 {
 							_, found := service.GetPreferredChannelByAffinity(ctx, modelName, group)
 							require.False(t, found)
+							// Affinity is only recorded after the protocol reports success.
+							service.MarkRequestPolicySuccess(ctx, nil)
 							service.RecordChannelAffinity(ctx, tc.binding)
 							t.Cleanup(func() { service.ClearCurrentChannelAffinityCache(ctx) })
 						}
@@ -297,6 +299,7 @@ func TestRequestPolicyRoutingDatabaseMatrix(t *testing.T) {
 							_, found := service.GetPreferredChannelByAffinity(seed, "policy-test", "default")
 							require.False(t, found)
 							seed.Set("channel_id", 1)
+							service.MarkRequestPolicySuccess(seed, nil)
 							service.RecordChannelAffinity(seed, 1)
 							t.Cleanup(func() { service.ClearCurrentChannelAffinityCache(seed) })
 							bound, found := service.GetPreferredChannelByAffinity(seed, "policy-test", "default")

@@ -449,6 +449,7 @@ func TestSessionRulesInheritOrOverrideGlobalDefault(t *testing.T) {
 				assert.EqualValues(t, 0, transformed["temperature"])
 				if expected == "off" {
 					ctx.Set("channel_id", 9)
+					MarkRequestPolicySuccess(ctx, nil)
 					RecordChannelAffinity(ctx, 9)
 					cached, found, err := cache.Get(cacheKey)
 					require.NoError(t, err)

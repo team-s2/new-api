@@ -215,6 +215,21 @@ func (s *StreamStatus) IsNormalEnd() bool {
 		s.EndReason == StreamEndReasonHandlerStop
 }
 
+// IsSuccessful 区分传输结束与协议完成，不用于决定计费、渠道禁用或重试。
+func (s *StreamStatus) IsSuccessful() bool {
+	if s == nil {
+		return true
+	}
+	outcome := s.OutcomeSnapshot()
+	if !s.IsNormalEnd() || s.EndError != nil || outcome.HasErrors {
+		return false
+	}
+	if outcome.Response == ResponseOutcomeUnknown {
+		return !outcome.ExpectsTerminal
+	}
+	return outcome.Response == ResponseOutcomeCompleted
+}
+
 func (s *StreamStatus) Summary() string {
 	if s == nil {
 		return "StreamStatus<nil>"
