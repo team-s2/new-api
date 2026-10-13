@@ -313,6 +313,7 @@ func TestSelectResponsesWSChannelHonorsStrictSessionBinding(t *testing.T) {
 	_, found := service.GetPreferredChannelByAffinity(seed, "ws-model", "default")
 	require.False(t, found)
 	seed.Set("channel_id", bound.Id)
+	service.MarkRequestPolicySuccess(seed, nil)
 	service.RecordChannelAffinity(seed, bound.Id)
 	t.Cleanup(func() { service.ClearCurrentChannelAffinityCache(seed) })
 

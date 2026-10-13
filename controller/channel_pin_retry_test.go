@@ -193,21 +193,28 @@ func TestRequestPolicyRoutingDatabaseMatrix(t *testing.T) {
 							request.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"policy-test"}`))
 							request.Request.Header.Set("Content-Type", "application/json")
 							request.Request.Header.Set("X-Session", t.Name())
-							common.SetContextKey(request, constant.ContextKeyUsingGroup, "default")
-							middleware.Distribute()(request)
+							relayed := false
+							engine := gin.New()
+							engine.POST("/v1/chat/completions", func(c *gin.Context) {
+								common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+							}, middleware.Distribute(), func(c *gin.Context) {
+								relayed = true
+								service.MarkRequestPolicySuccess(c, nil)
+							})
+							engine.HandleContext(request)
 							events := service.RequestPolicy(request).Events()
 							assert.True(t, slices.ContainsFunc(events, func(event service.PolicyEvent) bool { return event.Decision.Reason == "session_rule_matched" }), "decision events are recorded for every request")
 							bound, found = service.GetPreferredChannelByAffinity(seed, "policy-test", "default")
 							if tc.blocked {
 								assert.Equal(t, http.StatusServiceUnavailable, request.Writer.Status())
-								assert.True(t, request.IsAborted())
+								assert.False(t, relayed)
 								assert.Equal(t, keep, found, "binding retention is independent of strict request handling")
 								if found {
 									assert.Equal(t, 1, bound)
 								}
 								return
 							}
-							assert.False(t, request.IsAborted())
+							assert.True(t, relayed)
 							assert.Equal(t, 2, common.GetContextKeyInt(request, constant.ContextKeyChannelId), "prefer falls back to the next eligible channel")
 							require.True(t, found)
 							assert.Equal(t, 2, bound, "a successful fallback rebinds the session")

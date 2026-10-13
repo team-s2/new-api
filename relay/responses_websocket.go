@@ -443,10 +443,6 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 					return rejected
 				}
 				if strings.HasPrefix(event.Type, "response.") {
-					if !accepted {
-						// Like HTTP, bind the session only once upstream accepted the request.
-						service.RecordChannelAffinity(c, s.lockedChannelID)
-					}
 					accepted = true
 					if event.Response != nil && event.Response.ID != "" {
 						responseID = event.Response.ID
@@ -462,6 +458,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 				state.terminal = &incoming
 				ConsumeResponsesQuota(c, info, accumulator.Finish())
+				service.RecordChannelAffinity(c, s.lockedChannelID)
 				return nil
 			}
 			if err := s.writeClient(incoming.kind, incoming.body); err != nil {

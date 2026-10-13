@@ -549,7 +549,7 @@ func TestChannelAffinityRequiresSuccessfulOutcome(t *testing.T) {
 						appendStreamStatus(info, other)
 						logged := other.Snapshot()["stream_status"].(map[string]any)
 						expectedStatus := "error"
-						if tc.successful {
+						if tc.successful || tc.name == "incomplete" || tc.name == "cancelled" {
 							expectedStatus = "ok"
 						}
 						assert.Equal(t, expectedStatus, logged["status"])
