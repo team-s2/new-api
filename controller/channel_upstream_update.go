@@ -434,6 +434,25 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return service.FetchCodexChannelModels(channel)
 	}
 
+	if channel.Type == constant.ChannelTypeAntigravitySub {
+		key, _, apiErr := channel.GetNextEnabledKey()
+		if apiErr != nil {
+			return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
+		}
+		key = strings.TrimSpace(key)
+		if channel.Id > 0 && !channel.ChannelInfo.IsMultiKey {
+			if _, err := service.EnsureAntigravityChannelAccessToken(context.Background(), channel); err != nil {
+				return nil, err
+			}
+			key = strings.TrimSpace(channel.Key)
+		}
+		models, err := service.FetchAntigravityChannelModels(context.Background(), baseURL, key, channel.GetSetting().Proxy)
+		if err != nil {
+			return nil, sanitizeFetchModelsError(err, key)
+		}
+		return normalizeModelNames(models), nil
+	}
+
 	url := getUpstreamModelsURL(channel.Type, baseURL)
 
 	key, _, apiErr := channel.GetNextEnabledKey()

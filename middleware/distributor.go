@@ -638,6 +638,11 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 			common.SetContextKey(c, constant.ContextKeyChannelKey, refreshedKey)
 		}
 	}
+	if channel.Type == constant.ChannelTypeAntigravitySub && !channel.ChannelInfo.IsMultiKey {
+		if _, err := service.EnsureAntigravityChannelAccessToken(c.Request.Context(), channel); err == nil && channel.Key != "" {
+			common.SetContextKey(c, constant.ContextKeyChannelKey, channel.Key)
+		}
+	}
 
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, channel.GetBaseURL())
 

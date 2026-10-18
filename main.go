@@ -135,6 +135,9 @@ func main() {
 	// Grok subscription credential auto-refresh, same cadence as Codex.
 	service.StartGrokCredentialAutoRefreshTask()
 
+	// Antigravity subscription credential auto-refresh.
+	service.StartAntigravityCredentialAutoRefreshTask()
+
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 

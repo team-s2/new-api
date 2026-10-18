@@ -610,6 +610,138 @@ export async function getGrokUsage(
 }
 
 // ============================================================================
+// Antigravity Subscription Channel Operations
+// ============================================================================
+
+export interface AntigravityOAuthLoginResponse {
+  success: boolean
+  message?: string
+  data?: {
+    authorize_url: string
+    session_id: string
+    state?: string
+    redirect_uri?: string
+    expires_in?: number
+  }
+}
+
+export interface AntigravityOAuthExchangeResponse {
+  success: boolean
+  message?: string
+  data?: {
+    credential: string
+    expires_at?: string
+    last_refresh?: string
+    project_id?: string
+    email?: string
+    plan_tier?: string
+    has_refresh_token?: boolean
+  }
+}
+
+export async function startAntigravityOAuthLogin(
+  signal?: AbortSignal
+): Promise<AntigravityOAuthLoginResponse> {
+  const res = await api.post(
+    '/api/channel/antigravity/oauth/login',
+    {},
+    channelActionConfig({ disableDuplicate: true, signal })
+  )
+  return res.data
+}
+
+export async function exchangeAntigravityOAuthCode(
+  sessionId: string,
+  input: string,
+  signal?: AbortSignal
+): Promise<AntigravityOAuthExchangeResponse> {
+  const res = await api.post(
+    '/api/channel/antigravity/oauth/exchange',
+    { session_id: sessionId, input },
+    channelActionConfig({ signal })
+  )
+  return res.data
+}
+
+export async function refreshAntigravityCredential(
+  channelId: number
+): Promise<CodexCredentialRefreshResponse> {
+  const res = await api.post(
+    `/api/channel/${channelId}/antigravity/refresh`,
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export interface AntigravityCreditStatus {
+  credit_type: string
+  credit_amount: string
+  min_credit_amount_for_usage?: string
+}
+
+export interface AntigravityModelQuota {
+  model: string
+  display_name?: string
+  remaining_fraction?: number
+  remaining_percent?: number
+  used_percent?: number
+  reset_time?: string
+}
+
+export interface AntigravityProbeStatus {
+  source: string
+  path: string
+  status: number
+  ok: boolean
+  message?: string
+}
+
+export interface AntigravityUsageResult {
+  project_id?: string
+  email?: string
+  current_tier?: string
+  current_tier_name?: string
+  paid_tier?: string
+  paid_tier_name?: string
+  credits?: AntigravityCreditStatus[]
+  models?: AntigravityModelQuota[]
+  probes: AntigravityProbeStatus[]
+  fetched_at: string
+}
+
+export interface AntigravityChannelUsageData {
+  channel_id: number
+  channel_name: string
+  channel_type: number
+  credential?: {
+    expires_at?: string
+    last_refresh?: string
+    project_id?: string
+    email?: string
+    plan_tier?: string
+    has_refresh_token?: boolean
+  }
+  usage: AntigravityUsageResult
+}
+
+export interface AntigravityUsageResponse {
+  success: boolean
+  message?: string
+  data?: AntigravityChannelUsageData
+}
+
+export async function getAntigravityUsage(
+  channelId: number
+): Promise<AntigravityUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/antigravity/usage`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+// ============================================================================
 // Multi-Key Management
 // ============================================================================
 

@@ -94,6 +94,10 @@ export const STATIC_I18N_KEYS = [
   'Connect to self-hosted models served by vLLM',
   'vLLM server address, without /v1',
   'vLLM API key, or EMPTY if authentication is disabled',
+  'Antigravity Subscription',
+  'Access Gemini and Claude models through Google Cloud Code Assist (Antigravity) subscription',
+  'Use Antigravity OAuth Login to get credentials',
+  'Default: https://daily-cloudcode-pa.googleapis.com',
 
   'Price per image',
   'Per image',

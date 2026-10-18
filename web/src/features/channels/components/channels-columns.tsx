@@ -72,6 +72,7 @@ import {
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_GROK_SUB,
+  CHANNEL_TYPE_ANTIGRAVITY_SUB,
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
 import {
@@ -99,6 +100,7 @@ import { TaskPluginChannelBadge } from './channel-type-badge'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
+import { AntigravityUsageDialog } from './dialogs/antigravity-usage-dialog'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import {
   CodexUsageDialog,
@@ -367,12 +369,14 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const [grokUsageOpen, setGrokUsageOpen] = useState(false)
   const [grokUsageResponse, setGrokUsageResponse] =
     useState<GrokUsageResponse | null>(null)
+  const [antigravityUsageOpen, setAntigravityUsageOpen] = useState(false)
   const isZhipuCodingPlan =
     channel.type === CHANNEL_TYPE_BIGMODEL_SUB ||
     (channel.type === 26 && channel.base_url === 'glm-coding-plan')
   const isGrokSub = channel.type === CHANNEL_TYPE_GROK_SUB
+  const isAntigravitySub = channel.type === CHANNEL_TYPE_ANTIGRAVITY_SUB
   const isAccountInfoChannel =
-    channel.type === 57 || isZhipuCodingPlan || isGrokSub
+    channel.type === 57 || isZhipuCodingPlan || isGrokSub || isAntigravitySub
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -521,6 +525,12 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       return
     }
 
+    if (isAntigravitySub) {
+      setIsUpdating(false)
+      setAntigravityUsageOpen(true)
+      return
+    }
+
     try {
       const response = await updateChannelBalance(channel.id)
       if (response.success && response.balance !== undefined) {
@@ -565,6 +575,8 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = t('Click to view Zhipu Coding Plan usage')
   } else if (isGrokSub) {
     remainingTooltipLabel = t('Click to view Grok subscription usage')
+  } else if (isAntigravitySub) {
+    remainingTooltipLabel = t('Click to view Antigravity subscription usage')
   } else if (isInferenceChannel) {
     remainingTooltipLabel = inferenceStatusLabel
   }
@@ -686,6 +698,11 @@ export function BalanceCell({ channel }: { channel: Channel }) {
           }
         }}
         isRefreshing={isUpdating}
+      />
+      <AntigravityUsageDialog
+        open={antigravityUsageOpen}
+        onOpenChange={setAntigravityUsageOpen}
+        channel={channel}
       />
       {rawBalanceResponse !== null && (
         <BalanceQueryDialog
