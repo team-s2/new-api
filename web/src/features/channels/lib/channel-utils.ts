@@ -22,6 +22,7 @@ import { formatTimestampToDate } from '@/lib/format'
 import {
   CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_GROK_SUB,
+  CHANNEL_TYPE_ANTIGRAVITY_SUB,
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPES,
   MULTI_KEY_STATUS_CONFIG,
@@ -95,6 +96,7 @@ export function getChannelTypeIcon(type: number): string {
     24: 'Gemini', // Gemini
     11: 'Google', // PaLM
     41: 'Gemini', // Vertex AI
+    [CHANNEL_TYPE_ANTIGRAVITY_SUB]: 'Gemini', // Antigravity Subscription
 
     // Cloud providers
     33: 'Aws', // AWS

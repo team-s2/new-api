@@ -42,6 +42,8 @@ export const CHANNEL_TYPE_BIGMODEL_SUB = 100
 
 export const CHANNEL_TYPE_GROK_SUB = 101
 
+export const CHANNEL_TYPE_ANTIGRAVITY_SUB = 102
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -105,6 +107,7 @@ export const CHANNEL_TYPES = {
   63: 'SGLang',
   [CHANNEL_TYPE_BIGMODEL_SUB]: 'BigModel Subscription (Coding Plan)',
   [CHANNEL_TYPE_GROK_SUB]: 'Grok Subscription',
+  [CHANNEL_TYPE_ANTIGRAVITY_SUB]: 'Antigravity Subscription',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -195,6 +198,9 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
   [CHANNEL_TYPE_GROK_SUB]: {
     descriptionKey: 'Access Grok models through Grok subscription OAuth credentials',
   },
+  [CHANNEL_TYPE_ANTIGRAVITY_SUB]: {
+    descriptionKey: 'Access Gemini and Claude models through Antigravity subscription OAuth credentials',
+  },
 } satisfies Record<
   Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
   ChannelProviderPresentation
@@ -203,7 +209,7 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
   4, 62, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 100,
-  101, 22,
+  101, 102, 22,
   21,
   44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
 ]
@@ -542,6 +548,7 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_GROK_SUB,
+  CHANNEL_TYPE_ANTIGRAVITY_SUB,
 ])
 
 export const FIELD_PASSTHROUGH_TYPES = new Set([
@@ -591,6 +598,8 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
     'Use OAuth login to obtain the BigModel Coding Plan credential JSON (api_key / access_token)',
   [CHANNEL_TYPE_GROK_SUB]:
     'Use OAuth login to obtain the Grok subscription credential JSON (access_token / refresh_token)',
+  [CHANNEL_TYPE_ANTIGRAVITY_SUB]:
+    'Use OAuth login to obtain the Antigravity subscription credential JSON (access_token / refresh_token / project_id)',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

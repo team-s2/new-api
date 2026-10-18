@@ -70,6 +70,7 @@ const (
 	// 占用）再次冲突；持久化编号必须与前端保持一致。
 	ChannelTypeBigModelSub    = 100
 	ChannelTypeGrokSub        = 101
+	ChannelTypeAntigravitySub = 102
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -142,44 +143,45 @@ var ChannelBaseURLs = []string{
 	"",                                          //62
 	"",                                          //63
 	// 64-99 预留给上游未来新增的渠道类型；BigModel Coding Plan 固定使用 100。
-	"",                                          //64
-	"",                                          //65
-	"",                                          //66
-	"",                                          //67
-	"",                                          //68
-	"",                                          //69
-	"",                                          //70
-	"",                                          //71
-	"",                                          //72
-	"",                                          //73
-	"",                                          //74
-	"",                                          //75
-	"",                                          //76
-	"",                                          //77
-	"",                                          //78
-	"",                                          //79
-	"",                                          //80
-	"",                                          //81
-	"",                                          //82
-	"",                                          //83
-	"",                                          //84
-	"",                                          //85
-	"",                                          //86
-	"",                                          //87
-	"",                                          //88
-	"",                                          //89
-	"",                                          //90
-	"",                                          //91
-	"",                                          //92
-	"",                                          //93
-	"",                                          //94
-	"",                                          //95
-	"",                                          //96
-	"",                                          //97
-	"",                                          //98
-	"",                                          //99
-	"zcode-ultra",                               //100
-	"https://cli-chat-proxy.grok.com/v1",        //101
+	"",                                   //64
+	"",                                   //65
+	"",                                   //66
+	"",                                   //67
+	"",                                   //68
+	"",                                   //69
+	"",                                   //70
+	"",                                   //71
+	"",                                   //72
+	"",                                   //73
+	"",                                   //74
+	"",                                   //75
+	"",                                   //76
+	"",                                   //77
+	"",                                   //78
+	"",                                   //79
+	"",                                   //80
+	"",                                   //81
+	"",                                   //82
+	"",                                   //83
+	"",                                   //84
+	"",                                   //85
+	"",                                   //86
+	"",                                   //87
+	"",                                   //88
+	"",                                   //89
+	"",                                   //90
+	"",                                   //91
+	"",                                   //92
+	"",                                   //93
+	"",                                   //94
+	"",                                   //95
+	"",                                   //96
+	"",                                   //97
+	"",                                   //98
+	"",                                   //99
+	"zcode-ultra",                        //100
+	"https://cli-chat-proxy.grok.com/v1", //101
+	"https://daily-cloudcode-pa.googleapis.com", //102
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -252,6 +254,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSGLang:         "SGLang",
 	ChannelTypeBigModelSub:    "BigModel Subscription (Coding Plan)",
 	ChannelTypeGrokSub:        "Grok Subscription",
+	ChannelTypeAntigravitySub: "Antigravity Subscription",
 }
 
 func GetChannelTypeName(channelType int) string {

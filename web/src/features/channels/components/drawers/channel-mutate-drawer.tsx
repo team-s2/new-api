@@ -134,6 +134,7 @@ import {
   getGroups,
   getPrefillGroups,
   getTaskPluginOptions,
+  refreshAntigravityCredential,
   refreshCodexCredential,
   refreshGrokCredential,
 } from '../../api'
@@ -143,6 +144,7 @@ import {
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
   CHANNEL_TYPE_GROK_SUB,
+  CHANNEL_TYPE_ANTIGRAVITY_SUB,
   CHANNEL_TYPE_OLLAMA,
   CHANNEL_TYPE_OPTIONS,
   CHANNEL_TYPE_TASK_PLUGIN,
@@ -214,6 +216,10 @@ import { ChannelQuickOptions } from '../channel-quick-options'
 import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
+import {
+  AntigravityOAuthControls,
+  AntigravityOAuthLoginDialog,
+} from '../dialogs/antigravity-oauth-login-dialog'
 import {
   BigModelOAuthControls,
   BigModelOAuthLoginDialog,
@@ -441,12 +447,17 @@ export function ChannelMutateDrawer({
     useState(false)
   const [isGrokCredentialRefreshing, setIsGrokCredentialRefreshing] =
     useState(false)
+  const [
+    isAntigravityCredentialRefreshing,
+    setIsAntigravityCredentialRefreshing,
+  ] = useState(false)
   const initialModelsRef = useRef<string[]>([])
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
   const [statusCodeRiskOpen, setStatusCodeRiskOpen] = useState(false)
   const [bigModelOAuthOpen, setBigModelOAuthOpen] = useState(false)
   const [grokOAuthOpen, setGrokOAuthOpen] = useState(false)
+  const [antigravityOAuthOpen, setAntigravityOAuthOpen] = useState(false)
   const [statusCodeRiskDetailItems, setStatusCodeRiskDetailItems] = useState<
     string[]
   >([])
@@ -1213,6 +1224,25 @@ export function ChannelMutateDrawer({
       handleServerError(error, t('Refresh failed'))
     } finally {
       setIsGrokCredentialRefreshing(false)
+    }
+  }, [channelId, queryClient, t])
+
+  const handleRefreshAntigravityCredential = useCallback(async () => {
+    if (!channelId) return
+    setIsAntigravityCredentialRefreshing(true)
+    try {
+      const res = await refreshAntigravityCredential(channelId)
+      if (!res.success) {
+        throw createServerError(res, t('Failed to refresh credential'))
+      }
+      toast.success(t('Credential refreshed'))
+      queryClient.invalidateQueries({
+        queryKey: channelsQueryKeys.detail(channelId),
+      })
+    } catch (error) {
+      handleServerError(error, t('Refresh failed'))
+    } finally {
+      setIsAntigravityCredentialRefreshing(false)
     }
   }, [channelId, queryClient, t])
 
@@ -4680,6 +4710,40 @@ export function ChannelMutateDrawer({
                 </div>
               )}
 
+              {currentType === CHANNEL_TYPE_ANTIGRAVITY_SUB &&
+                isEditing &&
+                channelId && (
+                  <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                    <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                      <div className='text-muted-foreground text-xs'>
+                        {t(
+                          'Antigravity subscription tokens refresh automatically; you can also refresh manually.'
+                        )}
+                      </div>
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          onClick={handleRefreshAntigravityCredential}
+                          disabled={
+                            sensitiveLocked || isAntigravityCredentialRefreshing
+                          }
+                        >
+                          {isAntigravityCredentialRefreshing ? (
+                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          ) : (
+                            <RefreshCw className='mr-2 h-4 w-4' />
+                          )}
+                          {isAntigravityCredentialRefreshing
+                            ? t('Refreshing...')
+                            : t('Refresh credential')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
               <BigModelOAuthControls
                 channelType={currentType}
                 onLogin={() => setBigModelOAuthOpen(true)}
@@ -4688,6 +4752,11 @@ export function ChannelMutateDrawer({
               <GrokOAuthControls
                 channelType={currentType}
                 onLogin={() => setGrokOAuthOpen(true)}
+              />
+
+              <AntigravityOAuthControls
+                channelType={currentType}
+                onLogin={() => setAntigravityOAuthOpen(true)}
               />
 
               {isEditing && isMultiKeyChannel && (
@@ -5246,6 +5315,14 @@ export function ChannelMutateDrawer({
       <GrokOAuthLoginDialog
         open={grokOAuthOpen}
         onOpenChange={setGrokOAuthOpen}
+        onApply={(credential) =>
+          form.setValue('key', credential, { shouldValidate: true })
+        }
+      />
+
+      <AntigravityOAuthLoginDialog
+        open={antigravityOAuthOpen}
+        onOpenChange={setAntigravityOAuthOpen}
         onApply={(credential) =>
           form.setValue('key', credential, { shouldValidate: true })
         }
