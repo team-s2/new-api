@@ -395,6 +395,18 @@ export type OperationsSettings = {
   'perf_metrics_setting.flush_interval': number
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
+  'qq_bot.enabled': boolean
+  'qq_bot.self_id': string
+  'qq_bot.user_id': number
+  'qq_bot.command_prefix': string
+  'qq_bot.sessions': string
+  'qq_bot.hidden_groups': string
+  'qq_bot.flow_stages': string
+  'qq_bot.flow_hours': number
+  'qq_bot.flow_top_n': number
+  'qq_bot.flow_overflow': 'aggregate' | 'hide'
+  'qq_bot.request_timeout': number
+  'qq_bot.font_path': string
 }
 
 export type SecuritySettings = {

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { QQBotSettingsSection } from '../integrations/qq-bot-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
@@ -93,6 +94,28 @@ const OPERATIONS_SECTIONS = [
           WorkerValidKey: settings.WorkerValidKey,
           WorkerAllowHttpImageRequestEnabled:
             settings.WorkerAllowHttpImageRequestEnabled,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'qq-bot',
+    titleKey: 'QQ Bot',
+    build: (settings: OperationsSettings) => (
+      <QQBotSettingsSection
+        defaultValues={{
+          'qq_bot.enabled': settings['qq_bot.enabled'],
+          'qq_bot.self_id': settings['qq_bot.self_id'],
+          'qq_bot.user_id': settings['qq_bot.user_id'],
+          'qq_bot.command_prefix': settings['qq_bot.command_prefix'],
+          'qq_bot.sessions': settings['qq_bot.sessions'],
+          'qq_bot.hidden_groups': settings['qq_bot.hidden_groups'],
+          'qq_bot.flow_stages': settings['qq_bot.flow_stages'],
+          'qq_bot.flow_hours': settings['qq_bot.flow_hours'],
+          'qq_bot.flow_top_n': settings['qq_bot.flow_top_n'],
+          'qq_bot.flow_overflow': settings['qq_bot.flow_overflow'],
+          'qq_bot.request_timeout': settings['qq_bot.request_timeout'],
+          'qq_bot.font_path': settings['qq_bot.font_path'],
         }}
       />
     ),

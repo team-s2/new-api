@@ -8,6 +8,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/qqbot"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,6 +20,9 @@ func SetRouter(router *gin.Engine, assets WebAssets) {
 	SetTaskPluginProtocolRouter(router)
 	SetVideoRouter(router)
 	SetTaskRouter(router)
+	router.GET("/onebot/v11/ws", middleware.RouteTag("qqbot"), middleware.GlobalAPIRateLimit(), func(c *gin.Context) {
+		qqbot.ServeWS(c.Writer, c.Request)
+	})
 	pluginDispatcher := SetPluginRouter(router)
 	frontendBaseUrl := os.Getenv("FRONTEND_BASE_URL")
 	if common.IsMasterNode && frontendBaseUrl != "" {

@@ -63,6 +63,18 @@ const defaultOperationsSettings: OperationsSettings = {
   'perf_metrics_setting.flush_interval': 5,
   'perf_metrics_setting.bucket_time': 'hour',
   'perf_metrics_setting.retention_days': 0,
+  'qq_bot.enabled': false,
+  'qq_bot.self_id': '',
+  'qq_bot.user_id': 1,
+  'qq_bot.command_prefix': 'newapi',
+  'qq_bot.sessions': '',
+  'qq_bot.hidden_groups': '',
+  'qq_bot.flow_stages': 'user,model,channel',
+  'qq_bot.flow_hours': 24,
+  'qq_bot.flow_top_n': 20,
+  'qq_bot.flow_overflow': 'aggregate',
+  'qq_bot.request_timeout': 20,
+  'qq_bot.font_path': '',
 }
 
 export function OperationsSettings() {

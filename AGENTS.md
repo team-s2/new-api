@@ -3,6 +3,7 @@
 - GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
 - GitHub OAuth 支持组织和永久用户 ID 白名单，以及可配置的管理员／超级管理员自动提升；配置和权限语义见 `docs/ai/2610040349-github-oauth-access.md`。
 - 支持 BigModel Coding Plan 和 Grok Subscription。
+- 内置 QQ 机器人（`qqbot/`，OneBot 11 反向 WebSocket），配置和命令见 `docs/ai/2611070300-qq-bot.md`。
 
 本仓库的例行维护流程：
 
