@@ -173,7 +173,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //97
 	"",                                          //98
 	"",                                          //99
-	"glm-coding-plan",                           //100
+	"zcode-ultra",                               //100
 	"https://cli-chat-proxy.grok.com/v1",        //101
 }
 
@@ -263,6 +263,18 @@ type ChannelSpecialBase struct {
 }
 
 var ChannelSpecialBases = map[string]ChannelSpecialBase{
+	// ZCode 的 ultra 路由按 Anthropic Messages 协议交付，官方按 1.5 倍额度计量
+	// （扣减约为直连的 0.667 倍）。该路由只提供 /v1/messages，模型列表、OpenAI
+	// 协议的对话/向量/图像与 Responses 仍落到直连 coding 端点，否则路径不存在。
+	"zcode-ultra": {
+		ClaudeBaseURL:    "https://zcode.z.ai/api/v1/ultra/anthropic",
+		OpenAIBaseURL:    "https://open.bigmodel.cn/api/coding/paas/v4",
+		ResponsesBaseURL: "https://open.bigmodel.cn/api/v1",
+	},
+	"zcode-ultra-international": {
+		ClaudeBaseURL: "https://zcode.z.ai/api/v1/ultra-zai/anthropic",
+		OpenAIBaseURL: "https://api.z.ai/api/coding/paas/v4",
+	},
 	"glm-coding-plan": {
 		ClaudeBaseURL:    "https://open.bigmodel.cn/api/anthropic",
 		OpenAIBaseURL:    "https://open.bigmodel.cn/api/coding/paas/v4",

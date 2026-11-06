@@ -9,7 +9,7 @@
 | --- | --- |
 | 当前上游基线 | `v1.0.0-rc.48`（2026-11-04） |
 | 上一基线 | `v1.0.0-rc.40`（2026-09-21，由 `git merge-base` 精确确定） |
-| fork 自有提交数 | 11（不含上游提交） |
+| fork 自有提交数 | 12（不含上游提交） |
 | 上游版本号记录位置 | `VERSION`（上游该文件为空，由 CI 在构建时写入；本 fork 填上游 tag） |
 
 > `VERSION` 可能滞后于真实基线，判断基线请用 `git merge-base`，不要只信 `VERSION`。
@@ -31,6 +31,7 @@
 | `docs: update AGENTS.md and add rebase handbook` | 写入本 fork 的变更摘要、维护流程与开发约束；新增本手册 | `AGENTS.md` 顶部 fork 段、`docs/ai/2611070134-fork-rebase-handbook.md` | 中：上游对 `AGENTS.md` 改动很大，冲突时保留 fork 摘要块，其余用上游 |
 | `fix: 仅在协议成功后写入渠道亲和并记录流错误分类` | 渠道亲和仅在协议成功后建立/续期；日志记录流错误分类 | `service/channel_affinity.go`、`service/log_info_generate.go`、`service/request_policy.go`、`relay/common/stream_status.go`（`IsSuccessful`） | **高**：见下方「测试契约变更」 |
 | `fix: 在 WebSocket 终止结果后记录亲和并修正回归测试` | WebSocket 在终态后写亲和；修正亲和相关回归测试 | `relay/responses_websocket.go`、`service/log_info_generate.go`、`controller/channel_pin_retry_test.go`、`relay/responses_websocket_test.go` | 中：上游新增了亲和测试，断言「分发时即改绑」，与 fork「协议成功后改绑」不一致 |
+| `feat(channel): route Coding Plan channels through the ZCode ultra endpoint` | 类型 100 默认 base 改为 `zcode-ultra`：Claude 协议走 ultra 路由（官方 1.5x 额度），OpenAI 协议与模型列表仍走直连 coding 端点 | `constant/channel.go`（新增 `zcode-ultra`、`zcode-ultra-international` 预设与类型 100 默认值）、`docs/ai/2609051908-bigmodel-coding-plan.md` | 低：只新增预设键与默认值；上游若调整 `ChannelSpecialBases` 结构或默认 base 数组需同步 |
 
 ### 已移除的改动（2026-11-07，owner 决定）
 
@@ -39,12 +40,13 @@
 - `feat(codex): support gpt-image-2 image endpoints`（Codex 渠道图像生成/编辑中继、校验、流式与计费防护）
 - `feat(codex): impersonate native codex-tui client for chatgpt.com backend`（uTLS Chrome 指纹、codex-tui UA/originator、session id 与 `prompt_cache_key` 联动）
 
-恢复方式：`git cherry-pick` 原始提交（原始 SHA `7dfe4f9e8`、`294f597a3`）。rebase 前的完整历史保留在本地引用 `backup/pre-rc48` 与 `pre-rebase-20261106`，对应的远端旧提交为 `294f597a3`（force push 后仍可用该 SHA 取回）。恢复时需按上游最新的 Relay / 计费契约重新适配。
+恢复方式：`git cherry-pick` 原始提交（原始 SHA `7dfe4f9e8`、`294f597a3`）。rebase 前的历史保留在远端备份分支 `backup/main-261107`（= `294f597a3`，即 rc.40 基线时期的 fork main）与 `backup/main-before-rc40`。恢复时需按上游最新的 Relay / 计费契约重新适配。
 
 ## 配置与数据影响
 
 - **渠道类型编号**：`100` = BigModel Coding Plan，`101` = Grok Subscription。`64-99` 预留给上游新增渠道类型，新功能请从 `102` 起用。持久化编号必须与前端 `web/src/features/channels/constants.ts` 一致。
 - **Option**：`GitHubAccessPolicy`（JSON：`enabled` / `user_ids` / `organizations` / `role`），写入前经 `common.ParseGitHubAccessPolicy` 校验。
+- **渠道端点预设**（`constant.ChannelSpecialBases`）：`zcode-ultra`（类型 100 默认，Claude 协议走 ultra，OpenAI/Responses/模型列表走直连）、`zcode-ultra-international`、`glm-coding-plan`、`glm-coding-plan-international`。ultra 路由按官方 1.5x 额度计量，仅提供 Anthropic Messages 协议。
 - **环境变量**：`FLOW_DIRECT_LOGS_WINDOW_SECONDS`（默认 `21600`，`0` 关闭直读 logs 的短窗口路径）。
 - **数据库**：fork **未新增表、未改动 `AutoMigrate`**。GitHub 授权信息复用 `users` / `user_sessions` / `auth_flows`；Grok / BigModel 凭据以 JSON 存入渠道 `key`；短窗口统计直读 `logs`。因此 rebase 不需要数据迁移验证，但仍需保证上游迁移脚本可正常执行。
 - **后台任务**：`service.StartGrokCredentialAutoRefreshTask()`（`main.go`），节奏与 Codex 一致。
