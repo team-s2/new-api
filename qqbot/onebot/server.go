@@ -177,6 +177,11 @@ func secretMatches(header, secret string) bool {
 	return subtle.ConstantTimeCompare(got[:], want[:]) == 1
 }
 
+// Peer returns the connected peer, or nil when there is none.
+func (s *Server) Peer() *Peer {
+	return s.peer.Load()
+}
+
 // ServeHTTP authenticates and upgrades a NapCat connection.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	credentials := s.credentials()

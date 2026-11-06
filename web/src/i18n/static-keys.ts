@@ -28,6 +28,7 @@ export const STATIC_I18N_KEYS = [
   'Channel type does not match the status endpoint',
   'SGLang channel base URL cannot be empty',
   'No enabled channel key',
+  'Disabled during Zhipu Coding Plan peak hours',
   'Invalid channel header override',
   'Invalid channel proxy',
   'For this channel, map the model name in client requests to the model name sent upstream.',

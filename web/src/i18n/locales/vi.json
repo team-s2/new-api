@@ -7489,6 +7489,9 @@
     "The bot QQ number must be a positive integer": "Số QQ của bot phải là số nguyên dương",
     "The connection secret must be at least {{length}} characters": "Khóa bí mật kết nối phải có ít nhất {{length}} ký tự",
     "The connection secret must be at least 16 characters": "Khóa bí mật kết nối phải có ít nhất 16 ký tự",
-    "Select at least two flow stages": "Chọn ít nhất hai giai đoạn luồng"
+    "Select at least two flow stages": "Chọn ít nhất hai giai đoạn luồng",
+    "Disable During Peak Hours": "Tắt trong giờ cao điểm",
+    "Automatically disable this channel during Zhipu Coding Plan peak hours (14:00-18:00 UTC+8, Monday to Friday) and restore it afterwards. Bound QQ groups get a note on each change.": "Tự động tắt kênh này trong giờ cao điểm của Zhipu Coding Plan (14:00-18:00 UTC+8, từ thứ Hai đến thứ Sáu) và khôi phục sau đó. Các nhóm QQ đã liên kết nhận thông báo mỗi khi có thay đổi.",
+    "Disabled during Zhipu Coding Plan peak hours": "Đã tắt trong giờ cao điểm của Zhipu Coding Plan"
   }
 }

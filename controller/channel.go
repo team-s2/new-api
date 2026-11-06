@@ -703,7 +703,7 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
-	if channel.Type == constant.ChannelTypeZhipu_v4 && strings.TrimSpace(channel.GetBaseURL()) == "glm-coding-plan" {
+	if channel.Type == constant.ChannelTypeZhipu_v4 && constant.IsZhipuCodingPlanBase(channel.GetBaseURL()) {
 		trimmedKey := strings.TrimSpace(channel.Key)
 		if strings.HasPrefix(trimmedKey, "{") {
 			credential, err := zhipu_4v.ParseCodingPlanCredential(trimmedKey)

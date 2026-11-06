@@ -28,12 +28,14 @@ const (
 )
 
 func (c channel) accountKind() string {
+	baseURL := ""
+	if c.BaseURL != nil {
+		baseURL = *c.BaseURL
+	}
 	switch {
 	case c.Type == constant.ChannelTypeCodex:
 		return kindCodex
-	case c.Type == constant.ChannelTypeBigModelSub:
-		return kindZhipu
-	case c.Type == constant.ChannelTypeZhipu_v4 && c.BaseURL != nil && strings.TrimSpace(*c.BaseURL) == "glm-coding-plan":
+	case constant.IsZhipuCodingPlanChannel(c.Type, baseURL):
 		return kindZhipu
 	case c.Type == constant.ChannelTypeGrokSub:
 		return kindGrok

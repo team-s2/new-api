@@ -6,24 +6,19 @@
 
 ## ultra 端点（1.5x 额度）
 
-类型 100 的默认 `base_url` 是预设 `zcode-ultra`。该预设把 **Anthropic Messages 协议**的请求送到 ZCode 的 ultra 路由：
+类型 100 的默认 `base_url` 是预设 `zcode-ultra`：**Anthropic Messages 协议**的请求发往 ZCode 的 ultra 路由，OpenAI 协议的对话/向量/图像、Responses 与模型列表仍走直连 coding 端点（ultra 路由只提供 `/v1/messages`）。
 
-- 国内（BigModel）：`https://zcode.z.ai/api/v1/ultra/anthropic/v1/messages`
-- 国际（Z.AI）：预设 `zcode-ultra-international` → `https://zcode.z.ai/api/v1/ultra-zai/anthropic/v1/messages`
+| 用途 | 国内（BigModel） | 国际（Z.AI） |
+| --- | --- | --- |
+| Claude 协议（ultra） | `https://zcode.z.ai/api/v1/ultra/anthropic` | `https://zcode.z.ai/api/v1/ultra-zai/anthropic` |
+| OpenAI 协议 / 模型列表 | `https://open.bigmodel.cn/api/coding/paas/v4` | `https://api.z.ai/api/coding/paas/v4` |
+| Responses | `https://open.bigmodel.cn/api/v1` | — |
 
-官方对 ultra 路由按 **1.5 倍额度** 计量（扣减约为直连 coding 端点的 0.667 倍），鉴权沿用 CodingPlan 项目 key 的 `Authorization: Bearer`，不需要额外请求头，也不校验客户端指纹。
+国际站预设名为 `zcode-ultra-international`。
 
-ultra 路由只提供 `/v1/messages`，因此同一预设里另外登记了直连端点，供模型列表、OpenAI 协议的对话/向量/图像和 Responses 使用：
+ultra 路由由上游按 **1.5 倍额度** 计量（扣减约为直连 coding 端点的 0.667 倍）。出站鉴权沿用渠道凭据里的 `api_key`（CodingPlan 项目 key），统一 `Authorization: Bearer`，不追加额外请求头，也不校验客户端指纹。
 
-| 用途 | 端点 |
-| --- | --- |
-| Claude 协议（ultra，1.5x） | `https://zcode.z.ai/api/v1/ultra/anthropic` |
-| OpenAI 协议 / 模型列表 | `https://open.bigmodel.cn/api/coding/paas/v4` |
-| Responses | `https://open.bigmodel.cn/api/v1` |
-
-国际站对应 `https://api.z.ai/api/coding/paas/v4`（OpenAI 协议）。OpenAI 协议的 ultra 路径未经上游验证，需要 1.5x 时请使用 Claude 协议。
-
-已保存 `glm-coding-plan`（或空 base）的旧渠道仍然可用：空 base 现在按渠道类型默认解析到 `zcode-ultra`，`glm-coding-plan` 预设保持原样。需要显式回退直连时，把 `base_url` 改为 `glm-coding-plan`。
+`base_url` 留空按渠道类型默认解析到 `zcode-ultra`；显式填 `glm-coding-plan` 仍走改造前的直连行为，旧渠道可据此回退。
 
 ## 用量查询
 

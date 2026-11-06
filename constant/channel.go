@@ -1,5 +1,10 @@
 package constant
 
+import (
+	"slices"
+	"strings"
+)
+
 const (
 	ChannelTypeUnknown        = 0
 	ChannelTypeOpenAI         = 1
@@ -302,4 +307,28 @@ func IsAdvancedCustomChannel(channelType int) bool {
 	default:
 		return false
 	}
+}
+
+// zhipuCodingPlanBases are the ChannelSpecialBases keys served by a Zhipu Coding
+// Plan subscription.
+var zhipuCodingPlanBases = []string{
+	"zcode-ultra",
+	"zcode-ultra-international",
+	"glm-coding-plan",
+	"glm-coding-plan-international",
+}
+
+// IsZhipuCodingPlanBase reports whether baseURL is a Zhipu Coding Plan preset.
+func IsZhipuCodingPlanBase(baseURL string) bool {
+	return slices.Contains(zhipuCodingPlanBases, strings.TrimSpace(baseURL))
+}
+
+// IsZhipuCodingPlanChannel reports whether a channel runs on a Zhipu Coding Plan
+// subscription: every BigModel Subscription channel, and Zhipu V4 channels on a
+// Coding Plan preset.
+func IsZhipuCodingPlanChannel(channelType int, baseURL string) bool {
+	if channelType == ChannelTypeBigModelSub {
+		return true
+	}
+	return channelType == ChannelTypeZhipu_v4 && IsZhipuCodingPlanBase(baseURL)
 }

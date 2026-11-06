@@ -30,6 +30,7 @@ var helpEntries = [][2]string{
 	{"off <渠道 ID>", "禁用渠道并返回最新额度图"},
 	{"weight <渠道 ID|all> <数值>", "设置渠道权重（越大分到的请求越多）并返回最新额度图；all 修改当前群聊可操作的全部渠道"},
 	{"priority <渠道 ID|all> <数值>", "设置渠道优先级（越大越优先选中）并返回最新额度图；all 修改当前群聊可操作的全部渠道"},
+	{"peak <渠道 ID> on|off", "开启或关闭智谱 Coding Plan 渠道的高峰期自动禁用（" + peakHoursText + "）"},
 	{"flow [时间范围]", "生成 Dashboard Flow 流图；时间范围支持 30m、1h、7d 等格式"},
 }
 
@@ -47,6 +48,8 @@ func (t *commandTurn) execute(ctx context.Context, args []string) {
 		t.setStatus(ctx, rest, true)
 	case "off":
 		t.setStatus(ctx, rest, false)
+	case "peak":
+		t.setPeak(ctx, rest)
 	case "weight":
 		t.setRouting(ctx, rest, weightField)
 	case "priority":

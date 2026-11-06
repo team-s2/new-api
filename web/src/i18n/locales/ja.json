@@ -7489,6 +7489,9 @@
     "The bot QQ number must be a positive integer": "ボットのQQ番号は正の整数である必要があります",
     "The connection secret must be at least {{length}} characters": "接続シークレットは{{length}}文字以上にしてください",
     "The connection secret must be at least 16 characters": "接続シークレットは16文字以上にしてください",
-    "Select at least two flow stages": "フローステージを2つ以上選択してください"
+    "Select at least two flow stages": "フローステージを2つ以上選択してください",
+    "Disable During Peak Hours": "ピーク時間帯に無効化",
+    "Automatically disable this channel during Zhipu Coding Plan peak hours (14:00-18:00 UTC+8, Monday to Friday) and restore it afterwards. Bound QQ groups get a note on each change.": "Zhipu Coding Plan のピーク時間帯(月曜〜金曜 14:00-18:00 UTC+8)にこのチャネルを自動で無効化し、終了後に復元します。変更のたびに連携済みの QQ グループへ通知します。",
+    "Disabled during Zhipu Coding Plan peak hours": "Zhipu Coding Plan のピーク時間帯のため無効化"
   }
 }

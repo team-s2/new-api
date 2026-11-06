@@ -129,6 +129,7 @@ type channel struct {
 	Priority *int64  `json:"priority"`
 	Group    string  `json:"group"`
 	BaseURL  *string `json:"base_url"`
+	Setting  *string `json:"setting"`
 }
 
 func (c *apiClient) allChannels(ctx context.Context) ([]channel, error) {
@@ -183,6 +184,12 @@ func (c *apiClient) updateChannelStatus(ctx context.Context, id, status int) (bo
 // the record, so credentials and model lists are never touched.
 func (c *apiClient) updateChannelField(ctx context.Context, id int, field string, value int64) error {
 	_, err := c.request(ctx, http.MethodPut, "/api/channel/", nil, map[string]any{"id": id, field: value})
+	return err
+}
+
+// updateChannelSetting replaces the channel's setting JSON.
+func (c *apiClient) updateChannelSetting(ctx context.Context, id int, setting string) error {
+	_, err := c.request(ctx, http.MethodPut, "/api/channel/", nil, map[string]any{"id": id, "setting": setting})
 	return err
 }
 

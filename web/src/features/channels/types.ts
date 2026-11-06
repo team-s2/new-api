@@ -92,6 +92,7 @@ export interface ChannelSettings {
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
   tls_insecure_skip_verify?: boolean
+  peak_auto_disable?: boolean
 }
 
 export interface ChannelOtherSettings {

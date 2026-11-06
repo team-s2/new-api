@@ -42,6 +42,7 @@ import {
   validateAdvancedCustomConfig,
 } from './advanced-custom'
 import { readTaskExtendPluginKeys } from './channel-plugin-extensions'
+import { isZhipuCodingPlan, isZhipuCodingPlanBase } from './channel-utils'
 import { supportsResponsesWebSocket } from './responses-websocket'
 
 // ============================================================================
@@ -305,6 +306,7 @@ export const channelFormSchema = z
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
     tls_insecure_skip_verify: z.boolean().optional(),
+    peak_auto_disable: z.boolean().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -434,7 +436,7 @@ export const channelFormSchema = z
 
     if (
       data.type === 26 &&
-      data.base_url?.trim() === 'glm-coding-plan' &&
+      isZhipuCodingPlanBase(data.base_url) &&
       data.key?.trim().startsWith('{') &&
       !isZhipuCodingPlanCredential(data.key)
     ) {
@@ -530,6 +532,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
   tls_insecure_skip_verify: false,
+  peak_auto_disable: false,
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -578,6 +581,7 @@ export function transformChannelToFormDefaults(
     http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
     http2_connection_shards: 1,
     tls_insecure_skip_verify: false,
+    peak_auto_disable: false,
     pass_through_body_enabled: false,
     responses_websocket_enabled: false,
     system_prompt: '',
@@ -600,6 +604,7 @@ export function transformChannelToFormDefaults(
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         tls_insecure_skip_verify: parsed.tls_insecure_skip_verify === true,
+        peak_auto_disable: parsed.peak_auto_disable === true,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         responses_websocket_enabled:
           parsed.responses_websocket_enabled === true,
@@ -763,6 +768,13 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   }
   if (formData.tls_insecure_skip_verify === true) {
     settingObj.tls_insecure_skip_verify = true
+  }
+
+  if (
+    formData.peak_auto_disable === true &&
+    isZhipuCodingPlan(formData.type, formData.base_url)
+  ) {
+    settingObj.peak_auto_disable = true
   }
 
   return JSON.stringify(settingObj)

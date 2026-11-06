@@ -7489,6 +7489,9 @@
     "The bot QQ number must be a positive integer": "機器人 QQ 號必須是正整數",
     "The connection secret must be at least {{length}} characters": "連線金鑰至少需要 {{length}} 個字元",
     "The connection secret must be at least 16 characters": "連線金鑰至少需要 16 個字元",
-    "Select at least two flow stages": "至少選擇兩個流圖階段"
+    "Select at least two flow stages": "至少選擇兩個流圖階段",
+    "Disable During Peak Hours": "尖峰時段自動停用",
+    "Automatically disable this channel during Zhipu Coding Plan peak hours (14:00-18:00 UTC+8, Monday to Friday) and restore it afterwards. Bound QQ groups get a note on each change.": "在智譜 Coding Plan 尖峰時段（週一至週五 14:00-18:00 UTC+8）自動停用此渠道，結束後自動恢復。每次變更都會在綁定的 QQ 群發送提示。",
+    "Disabled during Zhipu Coding Plan peak hours": "智譜 Coding Plan 尖峰時段自動停用"
   }
 }

@@ -35,6 +35,9 @@ type ChannelSettings struct {
 	// TLSInsecureSkipVerify accepts upstream certificates that fail
 	// verification, such as self-signed ones, for this channel only.
 	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify,omitempty"`
+	// PeakAutoDisable takes a Zhipu Coding Plan channel offline during peak
+	// hours and restores it afterwards. Other channel types ignore it.
+	PeakAutoDisable bool `json:"peak_auto_disable,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,

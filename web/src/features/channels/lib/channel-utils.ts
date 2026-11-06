@@ -31,6 +31,34 @@ import {
 } from '../constants'
 import type { Channel, ChannelSettings, ChannelOtherSettings } from '../types'
 
+const ZHIPU_CODING_PLAN_BASES = new Set([
+  'zcode-ultra',
+  'zcode-ultra-international',
+  'glm-coding-plan',
+  'glm-coding-plan-international',
+])
+
+/** Whether a base URL is a Zhipu Coding Plan preset. */
+export function isZhipuCodingPlanBase(
+  baseUrl: string | null | undefined
+): boolean {
+  return ZHIPU_CODING_PLAN_BASES.has(baseUrl?.trim() ?? '')
+}
+
+/**
+ * Whether a channel runs on a Zhipu Coding Plan subscription: every BigModel
+ * Subscription channel, and Zhipu V4 channels on a Coding Plan preset.
+ */
+export function isZhipuCodingPlan(
+  type: number | undefined,
+  baseUrl: string | null | undefined
+): boolean {
+  return (
+    type === CHANNEL_TYPE_BIGMODEL_SUB ||
+    (type === 26 && isZhipuCodingPlanBase(baseUrl))
+  )
+}
+
 // ============================================================================
 // Channel Type Utilities
 // ============================================================================

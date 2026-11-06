@@ -969,7 +969,25 @@ func DeleteChannelByStatus(status int64) (int64, error) {
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
+	// Channels off for peak hours are healthy and come back on their own, so a
+	// bulk cleanup of failed channels must not delete them.
+	var channels []Channel
+	err := DB.Select("id", "other_info").
+		Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).
+		Find(&channels).Error
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]int, 0, len(channels))
+	for _, channel := range channels {
+		if channel.StatusReason() != ChannelStatusReasonZhipuPeak {
+			ids = append(ids, channel.Id)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Delete(&Channel{}, ids)
 	return result.RowsAffected, result.Error
 }
 

@@ -73,7 +73,6 @@ import {
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
-  CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_GROK_SUB,
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
@@ -94,6 +93,7 @@ import {
   createChannelFieldUpdateScheduler,
   isTagAggregateRow,
   type TagRow,
+  isZhipuCodingPlan,
 } from '../lib'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
@@ -370,12 +370,13 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const [grokUsageOpen, setGrokUsageOpen] = useState(false)
   const [grokUsageResponse, setGrokUsageResponse] =
     useState<GrokUsageResponse | null>(null)
-  const isZhipuCodingPlan =
-    channel.type === CHANNEL_TYPE_BIGMODEL_SUB ||
-    (channel.type === 26 && channel.base_url === 'glm-coding-plan')
+  const isZhipuCodingPlanChannel = isZhipuCodingPlan(
+    channel.type,
+    channel.base_url
+  )
   const isGrokSub = channel.type === CHANNEL_TYPE_GROK_SUB
   const isAccountInfoChannel =
-    channel.type === 57 || isZhipuCodingPlan || isGrokSub
+    channel.type === 57 || isZhipuCodingPlanChannel || isGrokSub
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -488,7 +489,7 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       return
     }
 
-    if (isZhipuCodingPlan) {
+    if (isZhipuCodingPlanChannel) {
       try {
         const res = await getZhipuCodingPlanUsage(channel.id)
         if (!res.success) {
@@ -564,7 +565,7 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = maskedRemainingLabel
   } else if (channel.type === 57) {
     remainingTooltipLabel = t('Click to view Codex usage')
-  } else if (isZhipuCodingPlan) {
+  } else if (isZhipuCodingPlanChannel) {
     remainingTooltipLabel = t('Click to view Zhipu Coding Plan usage')
   } else if (isGrokSub) {
     remainingTooltipLabel = t('Click to view Grok subscription usage')

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -34,9 +33,7 @@ func GetZhipuCodingPlanUsage(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel not found"})
 		return
 	}
-	isBigModelSub := channel.Type == constant.ChannelTypeBigModelSub
-	isLegacyCodingPlan := channel.Type == constant.ChannelTypeZhipu_v4 && strings.TrimSpace(channel.GetBaseURL()) == "glm-coding-plan"
-	if !isBigModelSub && !isLegacyCodingPlan {
+	if !constant.IsZhipuCodingPlanChannel(channel.Type, channel.GetBaseURL()) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel is not a Zhipu Coding Plan channel"})
 		return
 	}
@@ -45,7 +42,7 @@ func GetZhipuCodingPlanUsage(c *gin.Context) {
 		return
 	}
 
-	if isBigModelSub {
+	if channel.Type == constant.ChannelTypeBigModelSub {
 		getBigModelSubscriptionUsage(c, channel)
 		return
 	}

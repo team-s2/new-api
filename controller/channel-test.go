@@ -963,7 +963,10 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Disabled++
 	}
 
-	if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+	// A channel off for peak hours looks like any other auto-disabled channel to
+	// the test, so a passing probe must not bring it back early; the peak task
+	// re-enables it when the window closes.
+	if result.localErr == nil && !isChannelEnabled && channel.StatusReason() != model.ChannelStatusReasonZhipuPeak && service.ShouldEnableChannel(newAPIError, channel.Status) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		summary.Enabled++
 	}

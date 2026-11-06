@@ -7489,6 +7489,9 @@
     "The bot QQ number must be a positive integer": "Номер QQ бота должен быть положительным целым числом",
     "The connection secret must be at least {{length}} characters": "Секрет подключения должен содержать не менее {{length}} символов",
     "The connection secret must be at least 16 characters": "Секрет подключения должен содержать не менее 16 символов",
-    "Select at least two flow stages": "Выберите не менее двух этапов потока"
+    "Select at least two flow stages": "Выберите не менее двух этапов потока",
+    "Disable During Peak Hours": "Отключать в часы пик",
+    "Automatically disable this channel during Zhipu Coding Plan peak hours (14:00-18:00 UTC+8, Monday to Friday) and restore it afterwards. Bound QQ groups get a note on each change.": "Автоматически отключает этот канал в часы пик Zhipu Coding Plan (14:00-18:00 UTC+8, с понедельника по пятницу) и затем восстанавливает его. Привязанные группы QQ получают уведомление при каждом изменении.",
+    "Disabled during Zhipu Coding Plan peak hours": "Отключён в часы пик Zhipu Coding Plan"
   }
 }
