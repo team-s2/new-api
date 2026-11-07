@@ -11,11 +11,10 @@ import (
 	"github.com/QuantumNous/new-api/model"
 )
 
-type AntigravityCredentialRefreshOptions struct {
-	ResetCaches bool
-}
-
-func RefreshAntigravityChannelCredential(ctx context.Context, channelID int, opts AntigravityCredentialRefreshOptions) (*AntigravityOAuthKey, *model.Channel, error) {
+// RefreshAntigravityChannelCredential forces a token refresh unless a
+// concurrent caller has already replaced the credential this call observed,
+// then resolves any email or Cloud Code project the credential still lacks.
+func RefreshAntigravityChannelCredential(ctx context.Context, channelID int) (*AntigravityOAuthKey, *model.Channel, error) {
 	if channelID <= 0 {
 		return nil, nil, fmt.Errorf("invalid channel id: %d", channelID)
 	}
@@ -23,9 +22,18 @@ func RefreshAntigravityChannelCredential(ctx context.Context, channelID int, opt
 	if err != nil {
 		return nil, nil, err
 	}
-	return refreshAntigravityChannelCredential(ctx, ch, true)
+	key, updated, err := refreshAntigravityChannelCredential(ctx, ch, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	key, updated = backfillAntigravityKeyMetadata(ctx, updated, key)
+	return key, updated, nil
 }
 
+// refreshAntigravityChannelCredential rotates the OAuth token under the channel
+// row lock. Only the token endpoint is called inside the lock; metadata lookups
+// (which may retry onboarding for several seconds) belong in
+// backfillAntigravityKeyMetadata.
 func refreshAntigravityChannelCredential(ctx context.Context, observed *model.Channel, force bool) (*AntigravityOAuthKey, *model.Channel, error) {
 	if observed == nil {
 		return nil, nil, fmt.Errorf("channel is nil")
@@ -43,7 +51,7 @@ func refreshAntigravityChannelCredential(ctx context.Context, observed *model.Ch
 		if !ok {
 			return "", fmt.Errorf("channel %d key is not a valid Antigravity OAuth JSON credential", current.Id)
 		}
-		if existingKey.AccessToken != "" && (current.Key != observed.Key || (!force && grokTokenUsable(existingKey.Expired))) {
+		if current.Key != observed.Key || (!force && grokTokenUsable(existingKey.Expired)) {
 			oauthKey = existingKey
 			return current.Key, nil
 		}
@@ -51,34 +59,16 @@ func refreshAntigravityChannelCredential(ctx context.Context, observed *model.Ch
 			return "", fmt.Errorf("channel %d key does not contain refresh_token", current.Id)
 		}
 
-		proxyURL := strings.TrimSpace(current.GetSetting().Proxy)
-		refreshedKey, err := RefreshAntigravityOAuthToken(refreshCtx, existingKey.RefreshToken, proxyURL)
+		refreshedKey, err := RefreshAntigravityOAuthToken(refreshCtx, existingKey.RefreshToken, current.GetSetting().Proxy)
 		if err != nil {
 			return "", err
 		}
-
-		refreshedKey.Email = existingKey.Email
-		refreshedKey.ProjectID = existingKey.ProjectID
-		refreshedKey.PlanTier = existingKey.PlanTier
-
-		if refreshedKey.Email == "" {
-			if email, emailErr := fetchAntigravityUserEmail(refreshCtx, refreshedKey.AccessToken, proxyURL); emailErr == nil && email != "" {
-				refreshedKey.Email = email
-			}
+		merged, err := mergeAntigravityKeyJSON(current.Key, refreshedKey)
+		if err != nil {
+			return "", err
 		}
-		if refreshedKey.ProjectID == "" || refreshedKey.PlanTier == "" {
-			if projID, tier, projErr := FetchAntigravityProjectAndTier(refreshCtx, refreshedKey.AccessToken, proxyURL); projErr == nil {
-				if refreshedKey.ProjectID == "" {
-					refreshedKey.ProjectID = projID
-				}
-				if refreshedKey.PlanTier == "" {
-					refreshedKey.PlanTier = tier
-				}
-			}
-		}
-
-		oauthKey = refreshedKey
-		return mergeAntigravityKeyJSON(current.Key, refreshedKey)
+		oauthKey, _ = ParseAntigravityOAuthKey(merged)
+		return merged, nil
 	})
 	if err != nil {
 		return nil, nil, err
@@ -86,63 +76,100 @@ func refreshAntigravityChannelCredential(ctx context.Context, observed *model.Ch
 	return oauthKey, ch, nil
 }
 
-// EnsureAntigravityChannelAccessToken checks whether a single-key Antigravity
-// subscription channel's OAuth token is expired or within the refresh lead
-// window and refreshes it lazily before use.
+// backfillAntigravityKeyMetadata resolves the account email and Cloud Code
+// project that the OAuth exchange could not determine. The upstream lookups run
+// outside the channel row lock and only the merge is transactional. Failures
+// keep the current credential; the next refresh tries again.
+func backfillAntigravityKeyMetadata(ctx context.Context, ch *model.Channel, key *AntigravityOAuthKey) (*AntigravityOAuthKey, *model.Channel) {
+	if ch == nil || key == nil || (key.Email != "" && key.ProjectID != "") {
+		return key, ch
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, antigravityOAuthHTTPTimeout)
+	defer cancel()
+
+	proxyURL := ch.GetSetting().Proxy
+	metadata := &AntigravityOAuthKey{}
+	if key.Email == "" {
+		if email, err := fetchAntigravityUserEmail(lookupCtx, key.AccessToken, proxyURL); err == nil {
+			metadata.Email = email
+		}
+	}
+	if key.ProjectID == "" {
+		if projectID, planTier, err := FetchAntigravityProjectAndTier(lookupCtx, key.AccessToken, proxyURL); err == nil {
+			metadata.ProjectID = projectID
+			metadata.PlanTier = planTier
+		}
+	}
+	if metadata.Email == "" && metadata.ProjectID == "" && metadata.PlanTier == "" {
+		return key, ch
+	}
+
+	var mergedKey *AntigravityOAuthKey
+	updated, err := model.UpdateChannelCredential(lookupCtx, ch.Id, func(current *model.Channel) (string, error) {
+		merged, err := mergeAntigravityKeyJSON(current.Key, metadata)
+		if err != nil {
+			return "", err
+		}
+		mergedKey, _ = ParseAntigravityOAuthKey(merged)
+		return merged, nil
+	})
+	if err != nil || mergedKey == nil {
+		return key, ch
+	}
+	return mergedKey, updated
+}
+
+// EnsureAntigravityChannelAccessToken returns the channel key JSON with a
+// usable access token, lazily refreshing it when it is expired or within the
+// refresh skew. The channel is never mutated because callers may hold the
+// shared channel cache entry. On refresh failure the stored key is returned so
+// the relay can still try it.
 func EnsureAntigravityChannelAccessToken(ctx context.Context, ch *model.Channel) (string, error) {
 	if ch == nil {
 		return "", fmt.Errorf("channel is nil")
 	}
-	parsed, ok := ParseAntigravityOAuthKey(ch.Key)
+	rawKey := strings.TrimSpace(ch.Key)
+	parsed, ok := ParseAntigravityOAuthKey(rawKey)
 	if !ok {
-		return ExtractAntigravityAccessToken(ch.Key)
+		if _, err := ExtractAntigravityAccessToken(rawKey); err != nil {
+			return "", err
+		}
+		return rawKey, nil
 	}
-	if parsed.RefreshToken == "" || ch.Id <= 0 || ch.ChannelInfo.IsMultiKey {
-		return parsed.AccessToken, nil
-	}
-	if parsed.AccessToken != "" && grokTokenUsable(parsed.Expired) {
-		return parsed.AccessToken, nil
+	if parsed.RefreshToken == "" || ch.Id <= 0 || ch.ChannelInfo.IsMultiKey || grokTokenUsable(parsed.Expired) {
+		return rawKey, nil
 	}
 
 	refreshCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	refreshed, updatedCh, err := refreshAntigravityChannelCredential(refreshCtx, ch, false)
+	_, updated, err := refreshAntigravityChannelCredential(refreshCtx, ch, false)
 	if err != nil {
-		if parsed.AccessToken != "" {
-			return parsed.AccessToken, nil
-		}
-		return "", err
+		common.SysError(fmt.Sprintf("antigravity channel #%d lazy token refresh failed: %v", ch.Id, err))
+		return rawKey, nil
 	}
-	if updatedCh != nil {
-		ch.Key = updatedCh.Key
-	}
-	return refreshed.AccessToken, nil
+	return updated.Key, nil
 }
 
-func mergeAntigravityKeyJSON(oldKey string, refreshed *AntigravityOAuthKey) (string, error) {
+// mergeAntigravityKeyJSON overlays the non-empty fields of update onto the
+// stored key JSON, preserving fields this package does not model.
+func mergeAntigravityKeyJSON(oldKey string, update *AntigravityOAuthKey) (string, error) {
 	keyMap := make(map[string]any)
 	trimmed := strings.TrimSpace(oldKey)
 	if strings.HasPrefix(trimmed, "{") {
 		_ = common.Unmarshal([]byte(trimmed), &keyMap)
 	}
-	keyMap["access_token"] = refreshed.AccessToken
-	if refreshed.RefreshToken != "" {
-		keyMap["refresh_token"] = refreshed.RefreshToken
-	}
-	if refreshed.ProjectID != "" {
-		keyMap["project_id"] = refreshed.ProjectID
-	}
-	if refreshed.Email != "" {
-		keyMap["email"] = refreshed.Email
-	}
-	if refreshed.PlanTier != "" {
-		keyMap["plan_tier"] = refreshed.PlanTier
-	}
-	if refreshed.LastRefresh != "" {
-		keyMap["last_refresh"] = refreshed.LastRefresh
-	}
-	if refreshed.Expired != "" {
-		keyMap["expired"] = refreshed.Expired
+	for field, value := range map[string]string{
+		"access_token":  update.AccessToken,
+		"refresh_token": update.RefreshToken,
+		"project_id":    update.ProjectID,
+		"email":         update.Email,
+		"plan_tier":     update.PlanTier,
+		"last_refresh":  update.LastRefresh,
+		"expired":       update.Expired,
+	} {
+		if value != "" {
+			keyMap[field] = value
+		}
 	}
 	out, err := common.Marshal(keyMap)
 	if err != nil {

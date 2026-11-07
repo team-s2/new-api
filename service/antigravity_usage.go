@@ -1,10 +1,8 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"slices"
@@ -119,34 +117,16 @@ func FetchAntigravityChannelModels(ctx context.Context, baseURL, rawKey, proxyUR
 	if projectID != "" {
 		payload["project"] = projectID
 	}
-	rawBody, err := common.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
 
 	var lastErr error
 	for _, candidateBase := range ResolveAntigravityBaseURLs(baseURL) {
-		endpoint := candidateBase + "/v1internal:fetchAvailableModels"
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(rawBody))
-		if reqErr != nil {
-			lastErr = reqErr
+		status, body, postErr := postAntigravityCloudCode(ctx, client, candidateBase+"/v1internal:fetchAvailableModels", accessToken, payload)
+		if postErr != nil {
+			lastErr = postErr
 			continue
 		}
-		ApplyAntigravityHeaders(req.Header, accessToken, false)
-
-		resp, doErr := client.Do(req)
-		if doErr != nil {
-			lastErr = doErr
-			continue
-		}
-		body, readErr := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes))
-		resp.Body.Close()
-		if readErr != nil {
-			lastErr = readErr
-			continue
-		}
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			lastErr = fmt.Errorf("fetchAvailableModels returned status %d", resp.StatusCode)
+		if status < http.StatusOK || status >= http.StatusMultipleChoices {
+			lastErr = fmt.Errorf("fetchAvailableModels returned status %d", status)
 			continue
 		}
 
@@ -227,44 +207,12 @@ func FetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string
 	}
 
 	// 1. Probe loadCodeAssist for project, tier, and available credits.
-	loadAssistURL := AntigravityProdBaseURL + "/v1internal:loadCodeAssist"
-	if antigravityLoadCodeAssistOverride != "" {
-		loadAssistURL = antigravityLoadCodeAssistOverride
-	}
-	loadReqBody, _ := common.Marshal(map[string]any{
-		"metadata": map[string]string{
-			"ideType":    "ANTIGRAVITY",
-			"platform":   "PLATFORM_UNSPECIFIED",
-			"pluginType": "GEMINI",
-		},
+	probe, body := probeAntigravityUsageEndpoint(ctx, client, "load_code_assist", antigravityLoadCodeAssistEndpoint(), "/v1internal:loadCodeAssist", accessToken, map[string]any{
+		"metadata": antigravityIDEMetadata,
 	})
-	if req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, loadAssistURL, bytes.NewReader(loadReqBody)); reqErr == nil {
-		ApplyAntigravityHeaders(req.Header, accessToken, false)
-		resp, doErr := client.Do(req)
-		if doErr != nil {
-			out.Probes = append(out.Probes, AntigravityProbeStatus{
-				Source:  "load_code_assist",
-				Path:    "/v1internal:loadCodeAssist",
-				OK:      false,
-				Message: doErr.Error(),
-			})
-		} else {
-			body, _ := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes))
-			resp.Body.Close()
-			ok := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
-			probe := AntigravityProbeStatus{
-				Source: "load_code_assist",
-				Path:   "/v1internal:loadCodeAssist",
-				Status: resp.StatusCode,
-				OK:     ok,
-			}
-			if ok {
-				applyAntigravityLoadCodeAssistUsage(out, body)
-			} else {
-				probe.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
-			}
-			out.Probes = append(out.Probes, probe)
-		}
+	out.Probes = append(out.Probes, probe)
+	if probe.OK {
+		applyAntigravityLoadCodeAssistUsage(out, body)
 	}
 
 	// 2. Probe fetchAvailableModels for per-model quota fractions and reset times.
@@ -272,43 +220,33 @@ func FetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string
 	if out.ProjectID != "" {
 		modelsPayload["project"] = out.ProjectID
 	}
-	modelsReqBody, _ := common.Marshal(modelsPayload)
 	for _, candidateBase := range ResolveAntigravityBaseURLs(baseURL) {
-		endpoint := candidateBase + "/v1internal:fetchAvailableModels"
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(modelsReqBody))
-		if reqErr != nil {
-			continue
-		}
-		ApplyAntigravityHeaders(req.Header, accessToken, false)
-		resp, doErr := client.Do(req)
-		if doErr != nil {
-			out.Probes = append(out.Probes, AntigravityProbeStatus{
-				Source:  "fetch_available_models",
-				Path:    "/v1internal:fetchAvailableModels",
-				OK:      false,
-				Message: doErr.Error(),
-			})
-			continue
-		}
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes))
-		resp.Body.Close()
-		ok := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
-		probe := AntigravityProbeStatus{
-			Source: "fetch_available_models",
-			Path:   "/v1internal:fetchAvailableModels",
-			Status: resp.StatusCode,
-			OK:     ok,
-		}
-		if ok {
+		probe, body := probeAntigravityUsageEndpoint(ctx, client, "fetch_available_models", candidateBase+"/v1internal:fetchAvailableModels", "/v1internal:fetchAvailableModels", accessToken, modelsPayload)
+		out.Probes = append(out.Probes, probe)
+		if probe.OK {
 			applyAntigravityModelsQuota(out, body)
-			out.Probes = append(out.Probes, probe)
 			break
 		}
-		probe.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
-		out.Probes = append(out.Probes, probe)
 	}
 
 	return out, nil
+}
+
+// probeAntigravityUsageEndpoint calls one usage source and reports its outcome
+// for the usage dialog; the body is only meaningful when the probe is OK.
+func probeAntigravityUsageEndpoint(ctx context.Context, client *http.Client, source, endpoint, path, accessToken string, payload any) (AntigravityProbeStatus, []byte) {
+	probe := AntigravityProbeStatus{Source: source, Path: path}
+	status, body, err := postAntigravityCloudCode(ctx, client, endpoint, accessToken, payload)
+	probe.Status = status
+	switch {
+	case err != nil:
+		probe.Message = err.Error()
+	case status < http.StatusOK || status >= http.StatusMultipleChoices:
+		probe.Message = fmt.Sprintf("HTTP %d", status)
+	default:
+		probe.OK = true
+	}
+	return probe, body
 }
 
 func applyAntigravityLoadCodeAssistUsage(out *AntigravityUsageResult, body []byte) {

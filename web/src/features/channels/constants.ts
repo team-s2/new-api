@@ -199,7 +199,8 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
     descriptionKey: 'Access Grok models through Grok subscription OAuth credentials',
   },
   [CHANNEL_TYPE_ANTIGRAVITY_SUB]: {
-    descriptionKey: 'Access Gemini and Claude models through Antigravity subscription OAuth credentials',
+    descriptionKey:
+      'Access Gemini and Claude models through Google Cloud Code Assist (Antigravity) subscription',
   },
 } satisfies Record<
   Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
@@ -599,7 +600,7 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   [CHANNEL_TYPE_GROK_SUB]:
     'Use OAuth login to obtain the Grok subscription credential JSON (access_token / refresh_token)',
   [CHANNEL_TYPE_ANTIGRAVITY_SUB]:
-    'Use OAuth login to obtain the Antigravity subscription credential JSON (access_token / refresh_token / project_id)',
+    'Use Antigravity OAuth Login to get credentials',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

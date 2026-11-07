@@ -146,7 +146,7 @@ func RefreshAntigravityChannelCredential(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
 
-	oauthKey, ch, err := service.RefreshAntigravityChannelCredential(ctx, channelId, service.AntigravityCredentialRefreshOptions{ResetCaches: true})
+	oauthKey, ch, err := service.RefreshAntigravityChannelCredential(ctx, channelId)
 	if err != nil {
 		common.SysError("failed to refresh antigravity channel credential: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Failed to refresh Antigravity credential, please try again later"})
@@ -197,12 +197,15 @@ func GetAntigravityChannelUsage(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 25*time.Second)
 	defer cancel()
 
+	key := ch.Key
 	if !ch.ChannelInfo.IsMultiKey {
-		_, _ = service.EnsureAntigravityChannelAccessToken(ctx, ch)
+		if refreshedKey, ensureErr := service.EnsureAntigravityChannelAccessToken(ctx, ch); ensureErr == nil {
+			key = refreshedKey
+		}
 	}
 
 	proxyURL := strings.TrimSpace(ch.GetSetting().Proxy)
-	usage, err := service.FetchAntigravityUsage(ctx, ch.GetBaseURL(), ch.Key, proxyURL)
+	usage, err := service.FetchAntigravityUsage(ctx, ch.GetBaseURL(), key, proxyURL)
 	if err != nil {
 		common.SysError("failed to fetch antigravity channel usage: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Failed to fetch Antigravity subscription usage"})
@@ -210,7 +213,7 @@ func GetAntigravityChannelUsage(c *gin.Context) {
 	}
 
 	var keyMeta gin.H
-	if parsed, ok := service.ParseAntigravityOAuthKey(ch.Key); ok {
+	if parsed, ok := service.ParseAntigravityOAuthKey(key); ok {
 		keyMeta = gin.H{
 			"expires_at":        parsed.Expired,
 			"last_refresh":      parsed.LastRefresh,

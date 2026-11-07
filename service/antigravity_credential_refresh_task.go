@@ -19,7 +19,6 @@ const (
 	antigravityCredentialRefreshTickInterval = 10 * time.Minute
 	antigravityCredentialRefreshThreshold    = 30 * time.Minute
 	antigravityCredentialRefreshBatchSize    = 200
-	antigravityCredentialRefreshTimeout      = 20 * time.Second
 )
 
 var (
@@ -95,12 +94,12 @@ func runAntigravityCredentialAutoRefreshOnce() {
 				continue
 			}
 
-			refreshCtx, cancel := context.WithTimeout(ctx, antigravityCredentialRefreshTimeout)
-			_, _, refreshErr := refreshAntigravityChannelCredential(refreshCtx, ch, false)
-			cancel()
+			oauthKey, updated, refreshErr := refreshAntigravityChannelCredential(ctx, ch, false)
 			if refreshErr != nil {
 				logger.LogError(ctx, fmt.Sprintf("antigravity credential auto-refresh: channel #%d failed: %v", ch.Id, refreshErr))
+				continue
 			}
+			backfillAntigravityKeyMetadata(ctx, updated, oauthKey)
 		}
 	}
 }

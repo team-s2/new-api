@@ -228,11 +228,14 @@ func TestRefreshAntigravityChannelCredentialConcurrency(t *testing.T) {
 	antigravityTokenEndpointOverride = srv.URL
 	defer func() { antigravityTokenEndpointOverride = prevTokenEndpoint }()
 
-	token, err := EnsureAntigravityChannelAccessToken(context.Background(), ch)
+	rawKey, err := EnsureAntigravityChannelAccessToken(context.Background(), ch)
 	require.NoError(t, err)
-	assert.Equal(t, "new-refreshed-access", token)
+	ensuredKey, ok := ParseAntigravityOAuthKey(rawKey)
+	require.True(t, ok)
+	assert.Equal(t, "new-refreshed-access", ensuredKey.AccessToken)
+	assert.Equal(t, oldKey, ch.Key, "lazy refresh must not mutate the caller's channel")
 
-	gotKey, updatedCh, err := RefreshAntigravityChannelCredential(context.Background(), ch.Id, AntigravityCredentialRefreshOptions{})
+	gotKey, updatedCh, err := RefreshAntigravityChannelCredential(context.Background(), ch.Id)
 	require.NoError(t, err)
 	assert.Equal(t, "new-refreshed-access", gotKey.AccessToken)
 	assert.Equal(t, "proj-1", gotKey.ProjectID)

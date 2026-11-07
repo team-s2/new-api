@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
@@ -94,6 +95,14 @@ type antigravityTokenResponse struct {
 }
 
 var antigravityOAuthMemorySessions sync.Map
+
+// antigravityIDEMetadata identifies the client to the Cloud Code Assist setup
+// endpoints (loadCodeAssist / onboardUser).
+var antigravityIDEMetadata = map[string]string{
+	"ideType":    "ANTIGRAVITY",
+	"platform":   "PLATFORM_UNSPECIFIED",
+	"pluginType": "GEMINI",
+}
 
 func ResolveAntigravityUserAgent() string {
 	if envUA := strings.TrimSpace(os.Getenv("ANTIGRAVITY_USER_AGENT")); envUA != "" {
@@ -296,50 +305,19 @@ func FetchAntigravityProjectAndTier(ctx context.Context, accessToken, proxyURL s
 		return "", "", errors.New("access_token is empty")
 	}
 
-	loadURL := AntigravityProdBaseURL + "/v1internal:loadCodeAssist"
-	if antigravityLoadCodeAssistOverride != "" {
-		loadURL = antigravityLoadCodeAssistOverride
-	}
-
-	reqBody := map[string]any{
-		"metadata": map[string]string{
-			"ideType":    "ANTIGRAVITY",
-			"platform":   "PLATFORM_UNSPECIFIED",
-			"pluginType": "GEMINI",
-		},
-	}
-	rawBody, err := common.Marshal(reqBody)
-	if err != nil {
-		return "", "", err
-	}
-
 	client, err := newAntigravityHTTPClient(proxyURL, antigravityOAuthHTTPTimeout)
 	if err != nil {
 		return "", "", err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, loadURL, bytes.NewReader(rawBody))
+	status, bodyBytes, err := postAntigravityCloudCode(ctx, client, antigravityLoadCodeAssistEndpoint(), accessToken, map[string]any{
+		"metadata": antigravityIDEMetadata,
+	})
 	if err != nil {
 		return "", "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", ResolveAntigravityUserAgent())
-	req.Header.Set("X-Goog-Api-Client", antigravityAPIClient)
-	req.Header.Set("Client-Metadata", antigravityClientMetadata)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", "", err
-	}
-	defer resp.Body.Close()
-
-	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes))
-	if err != nil {
-		return "", "", err
-	}
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return "", "", fmt.Errorf("loadCodeAssist failed with status %d", resp.StatusCode)
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return "", "", fmt.Errorf("loadCodeAssist failed with status %d", status)
 	}
 
 	var result map[string]any
@@ -362,6 +340,39 @@ func FetchAntigravityProjectAndTier(ctx context.Context, accessToken, proxyURL s
 		return "", planTier, err
 	}
 	return onboardedProjectID, planTier, nil
+}
+
+func antigravityLoadCodeAssistEndpoint() string {
+	if antigravityLoadCodeAssistOverride != "" {
+		return antigravityLoadCodeAssistOverride
+	}
+	return AntigravityProdBaseURL + "/v1internal:loadCodeAssist"
+}
+
+// postAntigravityCloudCode sends a JSON POST to a Cloud Code Assist
+// v1internal endpoint with the Antigravity client headers and returns the
+// upstream status with a size-limited body.
+func postAntigravityCloudCode(ctx context.Context, client *http.Client, endpoint, accessToken string, payload any) (int, []byte, error) {
+	rawBody, err := common.Marshal(payload)
+	if err != nil {
+		return 0, nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(rawBody))
+	if err != nil {
+		return 0, nil, err
+	}
+	ApplyAntigravityHeaders(req.Header, accessToken, false)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, body, nil
 }
 
 func extractAntigravityProjectID(result map[string]any) string {
@@ -423,19 +434,14 @@ func onboardAntigravityUser(ctx context.Context, client *http.Client, accessToke
 		onboardURL = antigravityOnboardUserOverride
 	}
 
-	reqBody := map[string]any{
-		"tierId": tierID,
-		"metadata": map[string]string{
-			"ideType":    "ANTIGRAVITY",
-			"platform":   "PLATFORM_UNSPECIFIED",
-			"pluginType": "GEMINI",
-			"ideVersion": "2.23.0",
-			"ideName":    "antigravity",
-		},
+	metadata := map[string]string{
+		"ideVersion": "2.23.0",
+		"ideName":    "antigravity",
 	}
-	rawBody, err := common.Marshal(reqBody)
-	if err != nil {
-		return "", err
+	maps.Copy(metadata, antigravityIDEMetadata)
+	payload := map[string]any{
+		"tierId":   tierID,
+		"metadata": metadata,
 	}
 
 	for attempt := range 5 {
@@ -447,27 +453,12 @@ func onboardAntigravityUser(ctx context.Context, client *http.Client, accessToke
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, onboardURL, bytes.NewReader(rawBody))
+		status, bodyBytes, err := postAntigravityCloudCode(ctx, client, onboardURL, accessToken, payload)
 		if err != nil {
 			return "", err
 		}
-		req.Header.Set("Authorization", "Bearer "+accessToken)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", ResolveAntigravityUserAgent())
-		req.Header.Set("X-Goog-Api-Client", antigravityAPIClient)
-		req.Header.Set("Client-Metadata", antigravityClientMetadata)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return "", err
-		}
-		bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes))
-		resp.Body.Close()
-		if readErr != nil {
-			return "", readErr
-		}
-		if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-			return "", fmt.Errorf("onboardUser failed with status %d", resp.StatusCode)
+		if status < http.StatusOK || status >= http.StatusMultipleChoices {
+			return "", fmt.Errorf("onboardUser failed with status %d", status)
 		}
 
 		var result map[string]any

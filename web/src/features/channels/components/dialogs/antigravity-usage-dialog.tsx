@@ -1,16 +1,28 @@
+/*
+Copyright (C) 2023-2026 QuantumNous and the new-api contributors.
+
+This program is free software: you can redistribute it under the terms
+of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
+import { Dialog } from '@/components/dialog'
 import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
@@ -40,7 +52,7 @@ type AntigravityUsageDialogProps = {
 
 function formatIsoTime(
   value: string | undefined,
-  locale: string
+  locale: string | undefined
 ): string | null {
   if (!value) return null
   const date = new Date(value)
@@ -55,7 +67,7 @@ function clampPercent(value: number | undefined): number {
 
 function ModelQuotaCard(props: {
   item: AntigravityModelQuota
-  locale: string
+  locale: string | undefined
 }) {
   const { t } = useTranslation()
   const { item, locale } = props
@@ -109,7 +121,8 @@ export function AntigravityUsageDialog({
 
   const usageQuery = useQuery({
     queryKey: ['channel-antigravity-usage', channelId],
-    queryFn: async () => requireServerSuccess(await getAntigravityUsage(channelId)),
+    queryFn: async () =>
+      requireServerSuccess(await getAntigravityUsage(channelId)),
     enabled: open && channelId > 0,
     refetchOnWindowFocus: false,
     retry: false,
@@ -150,144 +163,137 @@ export function AntigravityUsageDialog({
   const expiresText = formatIsoTime(credential?.expires_at, intlLocale)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='max-h-[85vh] overflow-y-auto sm:max-w-2xl'>
-        <DialogHeader>
-          <div className='flex items-start justify-between gap-3 pr-6'>
-            <div className='space-y-1'>
-              <DialogTitle>
-                {t('Antigravity Subscription Usage')}
-              </DialogTitle>
-              <DialogDescription>
-                {channel
-                  ? `${channel.name || `#${channel.id}`} (#${channel.id})`
-                  : ''}
-              </DialogDescription>
-            </div>
-            <div className='flex items-center gap-2'>
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                onClick={handleRefreshCredential}
-                disabled={isRefreshingToken || usageQuery.isFetching}
-              >
-                {isRefreshingToken ? (
-                  <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
-                ) : (
-                  <RefreshCw className='mr-1.5 h-3.5 w-3.5' />
-                )}
-                {t('Refresh credential')}
-              </Button>
-              <Button
-                type='button'
-                variant='outline'
-                size='sm'
-                onClick={() => {
-                  void usageQuery.refetch()
-                }}
-                disabled={usageQuery.isFetching}
-              >
-                <RefreshCw
-                  className={`mr-1.5 h-3.5 w-3.5 ${usageQuery.isFetching ? 'animate-spin' : ''}`}
-                />
-                {t('Refresh')}
-              </Button>
-            </div>
-          </div>
-        </DialogHeader>
-
-        {usageQuery.isLoading ? (
-          <div className='space-y-3 py-2'>
-            <Skeleton className='h-20 w-full rounded-lg' />
-            <Skeleton className='h-28 w-full rounded-lg' />
-            <Skeleton className='h-28 w-full rounded-lg' />
-          </div>
-        ) : usageQuery.isError ? (
-          <ErrorState
-            className='min-h-0 p-4'
-            title={t('Failed to fetch Antigravity subscription usage')}
-            description={getServerErrorMessage(
-              usageQuery.error,
-              t('Failed to fetch Antigravity subscription usage')
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      contentClassName='max-h-[85vh] sm:max-w-2xl'
+      title={t('Antigravity Subscription Usage')}
+      description={
+        channel ? `${channel.name || `#${channel.id}`} (#${channel.id})` : ''
+      }
+      footer={
+        <>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={handleRefreshCredential}
+            disabled={isRefreshingToken || usageQuery.isFetching}
+          >
+            {isRefreshingToken ? (
+              <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
+            ) : (
+              <RefreshCw className='mr-1.5 h-3.5 w-3.5' />
             )}
-            onRetry={() => {
+            {t('Refresh credential')}
+          </Button>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => {
               void usageQuery.refetch()
             }}
-          />
-        ) : usage ? (
-          <div className='space-y-4 py-1'>
-            <div className='flex flex-wrap items-center gap-2 rounded-lg border p-3.5 text-xs'>
-              {tierLabel && (
-                <StatusBadge
-                  label={tierLabel}
-                  variant='info'
-                  size='sm'
-                  copyable={false}
-                  showDot={false}
-                />
-              )}
-              {(usage.project_id || credential?.project_id) && (
-                <span className='text-muted-foreground font-mono'>
-                  {t('Project')}: {usage.project_id || credential?.project_id}
-                </span>
-              )}
-              {(usage.email || credential?.email) && (
-                <span className='text-muted-foreground'>
-                  {usage.email || credential?.email}
-                </span>
-              )}
-              {expiresText && (
-                <span className='text-muted-foreground'>
-                  {t('Token expires')}: {expiresText}
-                </span>
-              )}
-            </div>
-
-            {usage.credits && usage.credits.length > 0 && (
-              <div className='space-y-2 rounded-lg border p-4'>
-                <div className='text-sm font-medium'>
-                  {t('Available Credits')}
-                </div>
-                <div className='grid gap-2 sm:grid-cols-2'>
-                  {usage.credits.map((c, idx) => (
-                    <div
-                      key={`${c.credit_type}-${idx}`}
-                      className='bg-muted/30 flex items-center justify-between rounded-md px-3 py-2 text-xs'
-                    >
-                      <span className='text-muted-foreground'>
-                        {c.credit_type}
-                      </span>
-                      <span className='font-mono font-semibold tabular-nums'>
-                        {c.credit_amount}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            disabled={usageQuery.isFetching}
+          >
+            <RefreshCw
+              className={`mr-1.5 h-3.5 w-3.5 ${usageQuery.isFetching ? 'animate-spin' : ''}`}
+            />
+            {t('Refresh')}
+          </Button>
+        </>
+      }
+    >
+      {usageQuery.isLoading ? (
+        <div className='space-y-3 py-2'>
+          <Skeleton className='h-20 w-full rounded-lg' />
+          <Skeleton className='h-28 w-full rounded-lg' />
+          <Skeleton className='h-28 w-full rounded-lg' />
+        </div>
+      ) : usageQuery.isError ? (
+        <ErrorState
+          className='min-h-0 p-4'
+          title={t('Failed to fetch Antigravity subscription usage')}
+          description={getServerErrorMessage(
+            usageQuery.error,
+            t('Failed to fetch Antigravity subscription usage')
+          )}
+          onRetry={() => {
+            void usageQuery.refetch()
+          }}
+        />
+      ) : usage ? (
+        <div className='space-y-4 py-1'>
+          <div className='flex flex-wrap items-center gap-2 rounded-lg border p-3.5 text-xs'>
+            {tierLabel && (
+              <StatusBadge
+                label={tierLabel}
+                variant='info'
+                size='sm'
+                copyable={false}
+                showDot={false}
+              />
             )}
-
-            {usage.models && usage.models.length > 0 ? (
-              <div className='space-y-2'>
-                <div className='text-sm font-medium'>{t('Model Quotas')}</div>
-                <div className='grid gap-2.5 sm:grid-cols-2'>
-                  {usage.models.map((item) => (
-                    <ModelQuotaCard
-                      key={item.model}
-                      item={item}
-                      locale={intlLocale}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className='text-muted-foreground rounded-lg border p-4 text-xs'>
-                {t('No model quota details returned by upstream.')}
-              </div>
+            {(usage.project_id || credential?.project_id) && (
+              <span className='text-muted-foreground font-mono'>
+                {t('Project')}: {usage.project_id || credential?.project_id}
+              </span>
+            )}
+            {(usage.email || credential?.email) && (
+              <span className='text-muted-foreground'>
+                {usage.email || credential?.email}
+              </span>
+            )}
+            {expiresText && (
+              <span className='text-muted-foreground'>
+                {t('Token expires')}: {expiresText}
+              </span>
             )}
           </div>
-        ) : null}
-      </DialogContent>
+
+          {usage.credits && usage.credits.length > 0 && (
+            <div className='space-y-2 rounded-lg border p-4'>
+              <div className='text-sm font-medium'>
+                {t('Available Credits')}
+              </div>
+              <div className='grid gap-2 sm:grid-cols-2'>
+                {usage.credits.map((c, idx) => (
+                  <div
+                    key={`${c.credit_type}-${idx}`}
+                    className='bg-muted/30 flex items-center justify-between rounded-md px-3 py-2 text-xs'
+                  >
+                    <span className='text-muted-foreground'>
+                      {c.credit_type}
+                    </span>
+                    <span className='font-mono font-semibold tabular-nums'>
+                      {c.credit_amount}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {usage.models && usage.models.length > 0 ? (
+            <div className='space-y-2'>
+              <div className='text-sm font-medium'>{t('Model Quotas')}</div>
+              <div className='grid gap-2.5 sm:grid-cols-2'>
+                {usage.models.map((item) => (
+                  <ModelQuotaCard
+                    key={item.model}
+                    item={item}
+                    locale={intlLocale}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className='text-muted-foreground rounded-lg border p-4 text-xs'>
+              {t('No model quota details returned by upstream.')}
+            </div>
+          )}
+        </div>
+      ) : null}
     </Dialog>
   )
 }

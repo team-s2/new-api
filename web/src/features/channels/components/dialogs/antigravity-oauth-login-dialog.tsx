@@ -1,16 +1,27 @@
+/*
+Copyright (C) 2023-2026 QuantumNous and the new-api contributors.
+
+This program is free software: you can redistribute it under the terms
+of the GNU Affero General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { ExternalLink, KeyRound, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/dialog'
+import { Dialog } from '@/components/dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -124,78 +135,16 @@ export function AntigravityOAuthLoginDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='sm:max-w-xl'>
-        <DialogHeader>
-          <DialogTitle>{t('Antigravity OAuth Login')}</DialogTitle>
-          <DialogDescription>
-            {t(
-              'Sign in with your Google account in the browser and paste the callback URL to generate the Antigravity subscription credential JSON.'
-            )}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className='space-y-4'>
-          <div className='bg-muted/40 space-y-3 rounded-lg border p-3.5 text-sm'>
-            <p className='font-medium'>{t('Steps')}</p>
-            <ol className='text-muted-foreground list-inside list-decimal space-y-1.5 text-xs leading-relaxed'>
-              <li>
-                {t(
-                  'Click "Open Antigravity Login Page" below and sign in with your Google account.'
-                )}
-              </li>
-              <li>
-                {t(
-                  'After authorizing, the browser will redirect to http://localhost:51121/oauth-callback?code=...&state=... (the page will fail to load).'
-                )}
-              </li>
-              <li>
-                {t(
-                  'Copy the full URL from the browser address bar and paste it below.'
-                )}
-              </li>
-            </ol>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              onClick={handleOpenLogin}
-              disabled={isOpeningLogin || isExchanging}
-            >
-              {isOpeningLogin ? (
-                <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-              ) : (
-                <ExternalLink className='mr-2 h-4 w-4' />
-              )}
-              {t('Open Antigravity Login Page')}
-            </Button>
-          </div>
-
-          <div className='space-y-2'>
-            <Label htmlFor='antigravity-oauth-callback'>
-              {t('Callback URL')}
-            </Label>
-            <Textarea
-              id='antigravity-oauth-callback'
-              rows={3}
-              value={callbackInput}
-              onChange={(e) => setCallbackInput(e.target.value)}
-              placeholder='http://localhost:51121/oauth-callback?code=...&state=...'
-              className='font-mono text-xs'
-              disabled={isExchanging}
-            />
-          </div>
-
-          <Alert>
-            <AlertDescription className='text-xs'>
-              {t(
-                'The authorization code is exchanged for an access_token, refresh_token, and Cloud Code Assist project_id, which New API refreshes automatically.'
-              )}
-            </AlertDescription>
-          </Alert>
-        </div>
-
-        <DialogFooter>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      contentClassName='sm:max-w-xl'
+      title={t('Antigravity OAuth Login')}
+      description={t(
+        'Sign in with your Google account in the browser and paste the callback URL to generate the Antigravity subscription credential JSON.'
+      )}
+      footer={
+        <>
           <Button
             type='button'
             variant='outline'
@@ -212,8 +161,68 @@ export function AntigravityOAuthLoginDialog({
             {isExchanging && <Loader2 className='mr-2 h-4 w-4 animate-spin' />}
             {t('Exchange & Fill Key')}
           </Button>
-        </DialogFooter>
-      </DialogContent>
+        </>
+      }
+    >
+      <div className='space-y-4'>
+        <div className='bg-muted/40 space-y-3 rounded-lg border p-3.5 text-sm'>
+          <p className='font-medium'>{t('Steps')}</p>
+          <ol className='text-muted-foreground list-inside list-decimal space-y-1.5 text-xs leading-relaxed'>
+            <li>
+              {t(
+                'Click "Open Antigravity Login Page" below and sign in with your Google account.'
+              )}
+            </li>
+            <li>
+              {t(
+                'After authorizing, the browser will redirect to http://localhost:51121/oauth-callback?code=...&state=... (the page will fail to load).'
+              )}
+            </li>
+            <li>
+              {t(
+                'Copy the full URL from the browser address bar and paste it below.'
+              )}
+            </li>
+          </ol>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={handleOpenLogin}
+            disabled={isOpeningLogin || isExchanging}
+          >
+            {isOpeningLogin ? (
+              <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+            ) : (
+              <ExternalLink className='mr-2 h-4 w-4' />
+            )}
+            {t('Open Antigravity Login Page')}
+          </Button>
+        </div>
+
+        <div className='space-y-2'>
+          <Label htmlFor='antigravity-oauth-callback'>
+            {t('Callback URL')}
+          </Label>
+          <Textarea
+            id='antigravity-oauth-callback'
+            rows={3}
+            value={callbackInput}
+            onChange={(e) => setCallbackInput(e.target.value)}
+            placeholder='http://localhost:51121/oauth-callback?code=...&state=...'
+            className='font-mono text-xs'
+            disabled={isExchanging}
+          />
+        </div>
+
+        <Alert>
+          <AlertDescription className='text-xs'>
+            {t(
+              'The authorization code is exchanged for an access_token, refresh_token, and Cloud Code Assist project_id, which New API refreshes automatically.'
+            )}
+          </AlertDescription>
+        </Alert>
+      </div>
     </Dialog>
   )
 }
@@ -233,7 +242,12 @@ export function AntigravityOAuthControls(props: {
             'Antigravity Subscription channels use a Google OAuth JSON credential (access_token + refresh_token + project_id).'
           )}
         </div>
-        <Button type='button' variant='outline' size='sm' onClick={props.onLogin}>
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          onClick={props.onLogin}
+        >
           <KeyRound className='mr-2 h-4 w-4' />
           {t('OAuth Login')}
         </Button>

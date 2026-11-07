@@ -442,11 +442,12 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 			return nil, fmt.Errorf("获取渠道密钥失败: %w", apiErr)
 		}
 		key = strings.TrimSpace(key)
-		if channel.Id > 0 && !channel.ChannelInfo.IsMultiKey {
-			if _, err := service.EnsureAntigravityChannelAccessToken(context.Background(), channel); err != nil {
+		if !channel.ChannelInfo.IsMultiKey {
+			ensuredKey, err := service.EnsureAntigravityChannelAccessToken(context.Background(), channel)
+			if err != nil {
 				return nil, err
 			}
-			key = strings.TrimSpace(channel.Key)
+			key = ensuredKey
 		}
 		models, err := service.FetchAntigravityChannelModels(context.Background(), baseURL, key, channel.GetSetting().Proxy)
 		if err != nil {
