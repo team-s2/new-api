@@ -135,6 +135,8 @@ func main() {
 	// Grok subscription credential auto-refresh, same cadence as Codex.
 	service.StartGrokCredentialAutoRefreshTask()
 
+	controller.StartZhipuResetOpportunityTask()
+
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 
