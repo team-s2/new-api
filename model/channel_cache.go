@@ -114,6 +114,30 @@ func SyncChannelCache(frequency int) {
 	}
 }
 
+// GetEnabledChannelsForGroupModel returns the enabled channels serving model in
+// group, ordered by the selection priority. It reads the in-memory selection
+// cache and returns nil when that cache is disabled.
+func GetEnabledChannelsForGroupModel(group, model string) []*Channel {
+	if !common.MemoryCacheEnabled {
+		return nil
+	}
+
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+
+	ids := group2model2channels[group][model]
+	if len(ids) == 0 {
+		ids = group2model2channels[group][ratio_setting.RoutingMatchModelName(model)]
+	}
+	channels := make([]*Channel, 0, len(ids))
+	for _, id := range ids {
+		if channel, ok := channelsIDM[id]; ok {
+			channels = append(channels, channel)
+		}
+	}
+	return channels
+}
+
 func GetRandomSatisfiedChannel(
 	group string,
 	model string,

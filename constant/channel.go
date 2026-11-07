@@ -280,6 +280,11 @@ var ChannelSpecialBases = map[string]ChannelSpecialBase{
 		ClaudeBaseURL: "https://zcode.z.ai/api/v1/ultra-zai/anthropic",
 		OpenAIBaseURL: "https://api.z.ai/api/coding/paas/v4",
 	},
+	// ZCode 体验套餐（start plan / ZCODE WEEKEND BUILD）只有 Anthropic Messages
+	// 端点，用 OAuth JWT 鉴权，且要求官方客户端指纹（见 zhipu_4v/zcode_trial_plan.go）。
+	"zcode-plan": {
+		ClaudeBaseURL: ZcodeTrialPlanBaseURL,
+	},
 	"glm-coding-plan": {
 		ClaudeBaseURL:    "https://open.bigmodel.cn/api/anthropic",
 		OpenAIBaseURL:    "https://open.bigmodel.cn/api/coding/paas/v4",
@@ -331,4 +336,24 @@ func IsZhipuCodingPlanChannel(channelType int, baseURL string) bool {
 		return true
 	}
 	return channelType == ChannelTypeZhipu_v4 && IsZhipuCodingPlanBase(baseURL)
+}
+
+// ZcodeTrialPlanBaseURL is the Anthropic Messages relay of the ZCode trial plan
+// (start plan). It is the only endpoint the plan serves and it authenticates
+// with the OAuth JWT rather than a console API key.
+const ZcodeTrialPlanBaseURL = "https://zcode.z.ai/api/v1/zcode-plan/anthropic"
+
+// ZcodeTrialPlanPreset is the base URL preset that selects the trial plan relay.
+const ZcodeTrialPlanPreset = "zcode-plan"
+
+// ZcodeTrialPlanUserAgent is the official client fingerprint the trial plan
+// gateway requires. The casing and the major/minor version are both significant.
+const ZcodeTrialPlanUserAgent = "ZCode/3.17.2"
+
+// IsZcodeTrialPlanBase reports whether baseURL addresses the ZCode trial plan
+// relay, either through the preset, the endpoint itself, or a mirror in front of
+// it that keeps the path.
+func IsZcodeTrialPlanBase(baseURL string) bool {
+	trimmed := strings.TrimSpace(baseURL)
+	return trimmed == ZcodeTrialPlanPreset || strings.Contains(trimmed, "/zcode-plan/")
 }

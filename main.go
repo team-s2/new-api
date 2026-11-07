@@ -141,6 +141,10 @@ func main() {
 	// Zhipu Coding Plan peak-hour auto-disable, announced in the bound QQ groups.
 	service.StartZhipuPeakTask(qqbot.NotifyZhipuPeak)
 
+	// ZCode trial plan availability, used to prefer plan channels for the models
+	// their plan still covers.
+	service.StartZcodeTrialPlanTask()
+
 	// Report this process as a system instance so the System Info page can show
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()
