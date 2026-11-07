@@ -156,28 +156,44 @@ func doZhipuResetRequest(ctx context.Context, client *http.Client, method string
 	if err != nil {
 		return err
 	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("zhipu coding plan reset: upstream status %d", response.StatusCode)
-	}
-	if len(bytes.TrimSpace(responseBody)) == 0 {
-		return errors.New("zhipu coding plan reset: empty upstream response")
-	}
+	// The reset API keeps its stable business code in the envelope even on HTTP
+	// 4xx, so the official client reads that code before the HTTP status.
 	var envelope zhipuResetEnvelope
-	if err := common.Unmarshal(responseBody, &envelope); err != nil {
-		return errors.New("zhipu coding plan reset: invalid upstream response")
+	parseErr := errors.New("empty body")
+	if len(bytes.TrimSpace(responseBody)) > 0 {
+		parseErr = common.Unmarshal(responseBody, &envelope)
 	}
-	if envelope.Code != 0 {
+	if parseErr == nil && envelope.Code != 0 {
 		message := strings.TrimSpace(envelope.Msg)
 		if message == "" {
 			message = fmt.Sprintf("business code %d", envelope.Code)
 		}
-		return fmt.Errorf("zhipu coding plan reset: %s", message)
+		return &zhipuResetError{httpStatus: response.StatusCode, businessCode: envelope.Code, data: envelope.Data, message: "zhipu coding plan reset: " + message}
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return &zhipuResetError{httpStatus: response.StatusCode, message: fmt.Sprintf("zhipu coding plan reset: upstream status %d", response.StatusCode)}
+	}
+	if parseErr != nil {
+		return &zhipuResetError{httpStatus: response.StatusCode, message: "zhipu coding plan reset: invalid upstream response"}
 	}
 	if data == nil || len(envelope.Data) == 0 {
 		return nil
 	}
 	if err := common.Unmarshal(envelope.Data, data); err != nil {
-		return errors.New("zhipu coding plan reset: invalid upstream data")
+		return &zhipuResetError{httpStatus: response.StatusCode, message: "zhipu coding plan reset: invalid upstream data"}
 	}
 	return nil
 }
+
+// zhipuResetError is a response the reset API returned. Errors of any other
+// type mean the request failed in transport, so its outcome is unknown.
+type zhipuResetError struct {
+	httpStatus int
+	// businessCode is the envelope code; 0 when the response had no business
+	// failure envelope.
+	businessCode int
+	data         json.RawMessage
+	message      string
+}
+
+func (e *zhipuResetError) Error() string { return e.message }

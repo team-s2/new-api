@@ -43,6 +43,10 @@
 
 恢复方式：`git cherry-pick` 原始提交（原始 SHA `7dfe4f9e8`、`294f597a3`）。rebase 前的历史保留在远端备份分支 `backup/main-261107`（= `294f597a3`，即 rc.40 基线时期的 fork main）与 `backup/main-before-rc40`。恢复时需按上游最新的 Relay / 计费契约重新适配。
 
+## 重置卡自动领取增量
+
+`service/zhipu_coding_plan_opportunity.go` 实现后台领取，`service/zhipu_coding_plan_reset.go` 的 `doZhipuResetRequest` 先读信封业务码再看 HTTP 状态，启动入口在 `main.go`，渠道读取为 `model.GetZhipuResetOpportunitySnapshots`。无新增数据库字段；行为见 [Coding Plan 自动领取](2609051908-bigmodel-coding-plan.md#自动领取)。rebase 时保留领取接口的 `3301` 正常业务态和幂等重试处理。
+
 ## 配置与数据影响
 
 - **渠道类型编号**：`100` = BigModel Coding Plan，`101` = Grok Subscription。`64-99` 预留给上游新增渠道类型，新功能请从 `102` 起用。持久化编号必须与前端 `web/src/features/channels/constants.ts` 一致。
