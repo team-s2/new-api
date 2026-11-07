@@ -1,6 +1,7 @@
 package zhipu_4v
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -60,6 +61,17 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	}
 	specialPlan, hasSpecialPlan := channelconstant.ChannelSpecialBases[baseURL]
 
+	if channelconstant.IsZcodeTrialPlanBase(baseURL) {
+		// The trial plan serves only the Anthropic Messages API; every other
+		// relay mode has no endpoint here.
+		switch info.RelayMode {
+		case relayconstant.RelayModeUnknown, relayconstant.RelayModeChatCompletions,
+			relayconstant.RelayModeCompletions, relayconstant.RelayModeResponses:
+			return fmt.Sprintf("%s/v1/messages", zcodeTrialPlanBaseURL(baseURL)), nil
+		}
+		return "", errors.New("zcode trial plan: only the Anthropic Messages API is available")
+	}
+
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
 		if hasSpecialPlan && specialPlan.ClaudeBaseURL != "" {
@@ -95,6 +107,22 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
 	apiKey := info.ApiKey
+	if channelconstant.IsZcodeTrialPlanBase(info.ChannelBaseUrl) {
+		token, err := service.ZcodeTrialPlanToken(info.ApiKey)
+		if err != nil {
+			return err
+		}
+		req.Set("Authorization", "Bearer "+token)
+		// The gateway fingerprints the official client: the User-Agent casing
+		// and its version are both significant.
+		req.Set("User-Agent", channelconstant.ZcodeTrialPlanUserAgent)
+		anthropicVersion := c.Request.Header.Get("anthropic-version")
+		if anthropicVersion == "" {
+			anthropicVersion = "2023-06-01"
+		}
+		req.Set("anthropic-version", anthropicVersion)
+		return nil
+	}
 	if _, isCodingPlan := channelconstant.ChannelSpecialBases[info.ChannelBaseUrl]; isCodingPlan {
 		credential, err := ParseCodingPlanCredential(info.ApiKey)
 		if err != nil {
@@ -109,6 +137,10 @@ func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *rel
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
 	if request == nil {
 		return nil, errors.New("request is nil")
+	}
+	if channelconstant.IsZcodeTrialPlanBase(info.ChannelBaseUrl) {
+		claudeAdaptor := claude.Adaptor{}
+		return claudeAdaptor.ConvertOpenAIRequest(c, info, request)
 	}
 	if lo.FromPtrOr(request.TopP, 0) >= 1 {
 		request.TopP = lo.ToPtr(0.99)
@@ -125,14 +157,61 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if channelconstant.IsZcodeTrialPlanBase(info.ChannelBaseUrl) {
+		claudeAdaptor := claude.Adaptor{}
+		return claudeAdaptor.ConvertOpenAIResponsesRequest(c, info, request)
+	}
 	return request, nil
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
-	return channel.DoApiRequest(a, c, info, requestBody)
+	if !channelconstant.IsZcodeTrialPlanBase(info.ChannelBaseUrl) {
+		return channel.DoApiRequest(a, c, info, requestBody)
+	}
+
+	payload, err := io.ReadAll(requestBody)
+	if err != nil {
+		return nil, err
+	}
+	injected, err := injectZcodeTrialPlanSystem(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	if !service.ZcodeTrialPlanAcquire(info.ChannelId) {
+		return nil, types.NewErrorWithStatusCode(
+			errors.New("zcode trial plan: the plan concurrency limit is reached"),
+			types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
+	}
+	// The slot stays taken until the response body is closed, so the defer
+	// releases it only when the request never produced a body to read.
+	released := false
+	defer func() {
+		if !released {
+			service.ZcodeTrialPlanRelease(info.ChannelId)
+		}
+	}()
+
+	resp, err := channel.DoApiRequest(a, c, info, bytes.NewReader(injected))
+	if err != nil {
+		return nil, err
+	}
+	resp, err = checkZcodeTrialPlanResponse(resp)
+	if err != nil {
+		return nil, err
+	}
+	released = true
+	resp.Body = &zcodeTrialPlanBody{ReadCloser: resp.Body, channelId: info.ChannelId}
+	return resp, nil
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if channelconstant.IsZcodeTrialPlanBase(info.ChannelBaseUrl) {
+		// The upstream speaks Anthropic Messages; the Claude response handler
+		// converts to the client's own format.
+		adaptor := claude.Adaptor{}
+		return adaptor.DoResponse(c, resp, info)
+	}
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
 		adaptor := claude.Adaptor{}

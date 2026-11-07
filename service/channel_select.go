@@ -119,6 +119,13 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 	filters := GetChannelConstraints(param.Ctx).Filters
 	affinityRetryOffset := param.Ctx.GetInt(ginKeyChannelAffinityRetryOffset)
 
+	// A trial plan with quota left serves its models ahead of the ordinary
+	// channels; when it has no free slot this returns nil and selection falls
+	// back to them.
+	if channel := ZcodeTrialPlanPreferredChannel(param); channel != nil {
+		return channel, selectGroup, nil
+	}
+
 	if param.TokenGroup == "auto" {
 		autoGroups := GetRequestAutoGroups(param.Ctx, userGroup)
 		if len(autoGroups) == 0 {
