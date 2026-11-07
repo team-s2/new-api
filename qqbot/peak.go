@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	peakHoursText    = "周一至周五 14:00-18:00 UTC+8"
-	peakSettingKey   = "peak_auto_disable"
-	peakNoticeBudget = 30 * time.Second
+	peakHoursText       = "周一至周五 14:00-18:00 UTC+8"
+	peakSettingKey      = "peak_auto_disable"
+	channelNoticeBudget = 30 * time.Second
 )
 
 // setPeak turns a channel's peak-hour auto-disable on or off. The peak task
@@ -84,9 +84,9 @@ func (t *commandTurn) setPeak(ctx context.Context, args []string) {
 	t.replyText(fmt.Sprintf("已%s渠道 #%d 的高峰期自动禁用（%s）：%s", verb, id, peakHoursText, target.displayName()))
 }
 
-// peakChannelLines lists the changed channels a chat with this group filter
+// channelNoticeLines lists the changed channels a chat with this group filter
 // may see, one per line.
-func peakChannelLines(channels []*model.Channel, group string) string {
+func channelNoticeLines(channels []*model.Channel, group string) string {
 	var lines strings.Builder
 	for _, item := range channels {
 		visible := channel{ID: item.Id, Name: item.Name, Group: item.Group}
@@ -101,10 +101,10 @@ func peakChannelLines(channels []*model.Channel, group string) string {
 // the changed channels concern it.
 func peakNotice(disabled, restored []*model.Channel, group string) string {
 	var parts []string
-	if lines := peakChannelLines(disabled, group); lines != "" {
+	if lines := channelNoticeLines(disabled, group); lines != "" {
 		parts = append(parts, "智谱 Coding Plan 高峰期（"+peakHoursText+"），已自动禁用渠道："+lines)
 	}
-	if lines := peakChannelLines(restored, group); lines != "" {
+	if lines := channelNoticeLines(restored, group); lines != "" {
 		parts = append(parts, "智谱 Coding Plan 高峰期自动禁用已解除，已恢复渠道："+lines)
 	}
 	return strings.Join(parts, "\n\n")
@@ -114,6 +114,22 @@ func peakNotice(disabled, restored []*model.Channel, group string) string {
 // The status change stands either way, so a note that cannot be delivered is
 // only logged.
 func NotifyZhipuPeak(disabled, restored []*model.Channel) {
+	sendChannelGroupNotice(func(group string) string { return peakNotice(disabled, restored, group) })
+}
+
+// NotifyZhipuResetCards announces successful claims, without consuming cards.
+func NotifyZhipuResetCards(channels []*model.Channel) {
+	sendChannelGroupNotice(func(group string) string {
+		lines := channelNoticeLines(channels, group)
+		if lines == "" {
+			return ""
+		}
+		return "智谱 Coding Plan 已自动领取重置卡：" + lines
+	})
+}
+
+// sendChannelGroupNotice preserves the configured group filter for each chat.
+func sendChannelGroupNotice(noticeForGroup func(string) string) {
 	settings := *system_setting.GetQQBotSettings()
 	if !settings.Enabled {
 		return
@@ -125,21 +141,21 @@ func NotifyZhipuPeak(disabled, restored []*model.Channel) {
 	}
 	peer := defaultApp().server.Peer()
 	if peer == nil {
-		common.SysError(common.LogText("failed to send QQ peak notice: bot is not connected to this node"))
+		common.SysError(common.LogText("failed to send QQ channel notice: bot is not connected to this node"))
 		return
 	}
 	for session, group := range sessions {
 		groupID, isGroup := strings.CutPrefix(session, "group:")
-		notice := peakNotice(disabled, restored, group)
+		notice := noticeForGroup(group)
 		if !isGroup || notice == "" {
 			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), peakNoticeBudget)
+		ctx, cancel := context.WithTimeout(context.Background(), channelNoticeBudget)
 		destination := onebot.Event{MessageType: "group", GroupID: json.Number(groupID)}
 		err := peer.Send(ctx, destination, []onebot.Segment{onebot.Text(notice)})
 		cancel()
 		if err != nil {
-			common.SysError(common.LogText("failed to send QQ peak notice to %s: %s", session, err.Error()))
+			common.SysError(common.LogText("failed to send QQ channel notice to %s: %s", session, err.Error()))
 		}
 	}
 }

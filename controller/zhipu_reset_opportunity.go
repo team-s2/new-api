@@ -20,14 +20,14 @@ var zhipuResetOpportunityOnce sync.Once
 
 // StartZhipuResetOpportunityTask claims cards even while channels are disabled
 // for peak hours. It never consumes cards or changes channel health.
-func StartZhipuResetOpportunityTask() {
+func StartZhipuResetOpportunityTask(notify func([]*model.Channel)) {
 	zhipuResetOpportunityOnce.Do(func() {
 		if !common.IsMasterNode {
 			return
 		}
 		gopool.Go(func() {
 			states := make(map[[32]byte]*service.ZhipuResetOpportunity)
-			ticker := time.NewTicker(time.Minute)
+			ticker := time.NewTicker(5 * time.Minute)
 			defer ticker.Stop()
 			for {
 				// Reuse the existing channel reader, including credentials, without
@@ -37,6 +37,7 @@ func StartZhipuResetOpportunityTask() {
 					common.SysError("Zhipu reset opportunity: failed to load channels")
 				} else {
 					seen := make(map[[32]byte]bool)
+					var grantedChannels []*model.Channel
 					for _, channel := range channels {
 						if channel.Type != constant.ChannelTypeBigModelSub || channel.ChannelInfo.IsMultiKey {
 							continue
@@ -82,8 +83,12 @@ func StartZhipuResetOpportunityTask() {
 								common.SysError(fmt.Sprintf("Zhipu reset inventory refresh failed for channel %d", channel.Id))
 							}
 							common.SysLog(fmt.Sprintf("Zhipu reset card granted for channel %d", channel.Id))
+							grantedChannels = append(grantedChannels, channel)
 						}
 						cancel()
+					}
+					if len(grantedChannels) > 0 && notify != nil {
+						notify(grantedChannels)
 					}
 					for key := range states {
 						if !seen[key] {
