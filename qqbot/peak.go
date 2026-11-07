@@ -7,18 +7,14 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/qqbot/onebot"
-	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
 const (
-	peakHoursText    = "周一至周五 14:00-18:00 UTC+8"
-	peakSettingKey   = "peak_auto_disable"
-	peakNoticeBudget = 30 * time.Second
+	peakHoursText  = "周一至周五 14:00-18:00 UTC+8"
+	peakSettingKey = "peak_auto_disable"
 )
 
 // setPeak turns a channel's peak-hour auto-disable on or off. The peak task
@@ -84,27 +80,14 @@ func (t *commandTurn) setPeak(ctx context.Context, args []string) {
 	t.replyText(fmt.Sprintf("已%s渠道 #%d 的高峰期自动禁用（%s）：%s", verb, id, peakHoursText, target.displayName()))
 }
 
-// peakChannelLines lists the changed channels a chat with this group filter
-// may see, one per line.
-func peakChannelLines(channels []*model.Channel, group string) string {
-	var lines strings.Builder
-	for _, item := range channels {
-		visible := channel{ID: item.Id, Name: item.Name, Group: item.Group}
-		if visible.inGroup(group) {
-			fmt.Fprintf(&lines, "\n- #%d %s", visible.ID, visible.displayName())
-		}
-	}
-	return lines.String()
-}
-
 // peakNotice is the note for a chat with this group filter; empty when none of
 // the changed channels concern it.
 func peakNotice(disabled, restored []*model.Channel, group string) string {
 	var parts []string
-	if lines := peakChannelLines(disabled, group); lines != "" {
+	if lines := channelNoticeLines(disabled, group); lines != "" {
 		parts = append(parts, "智谱 Coding Plan 高峰期（"+peakHoursText+"），已自动禁用渠道："+lines)
 	}
-	if lines := peakChannelLines(restored, group); lines != "" {
+	if lines := channelNoticeLines(restored, group); lines != "" {
 		parts = append(parts, "智谱 Coding Plan 高峰期自动禁用已解除，已恢复渠道："+lines)
 	}
 	return strings.Join(parts, "\n\n")
@@ -114,32 +97,5 @@ func peakNotice(disabled, restored []*model.Channel, group string) string {
 // The status change stands either way, so a note that cannot be delivered is
 // only logged.
 func NotifyZhipuPeak(disabled, restored []*model.Channel) {
-	settings := *system_setting.GetQQBotSettings()
-	if !settings.Enabled {
-		return
-	}
-	sessions, err := system_setting.ParseQQBotSessions(settings.Sessions)
-	if err != nil {
-		common.SysError(common.LogText("invalid QQ bot sessions: %s", err.Error()))
-		return
-	}
-	peer := defaultApp().server.Peer()
-	if peer == nil {
-		common.SysError(common.LogText("failed to send QQ peak notice: bot is not connected to this node"))
-		return
-	}
-	for session, group := range sessions {
-		groupID, isGroup := strings.CutPrefix(session, "group:")
-		notice := peakNotice(disabled, restored, group)
-		if !isGroup || notice == "" {
-			continue
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), peakNoticeBudget)
-		destination := onebot.Event{MessageType: "group", GroupID: json.Number(groupID)}
-		err := peer.Send(ctx, destination, []onebot.Segment{onebot.Text(notice)})
-		cancel()
-		if err != nil {
-			common.SysError(common.LogText("failed to send QQ peak notice to %s: %s", session, err.Error()))
-		}
-	}
+	sendChannelGroupNotice(func(group string) string { return peakNotice(disabled, restored, group) })
 }

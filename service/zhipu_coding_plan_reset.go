@@ -9,10 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/google/uuid"
 )
 
 // Zhipu coding-plan reset cards, mirroring the official ZCode client
@@ -157,7 +160,7 @@ func doZhipuResetRequest(ctx context.Context, client *http.Client, method string
 		return err
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("zhipu coding plan reset: upstream status %d", response.StatusCode)
+		return &zhipuResetError{code: response.StatusCode, message: fmt.Sprintf("zhipu coding plan reset: upstream status %d", response.StatusCode)}
 	}
 	if len(bytes.TrimSpace(responseBody)) == 0 {
 		return errors.New("zhipu coding plan reset: empty upstream response")
@@ -171,7 +174,7 @@ func doZhipuResetRequest(ctx context.Context, client *http.Client, method string
 		if message == "" {
 			message = fmt.Sprintf("business code %d", envelope.Code)
 		}
-		return fmt.Errorf("zhipu coding plan reset: %s", message)
+		return &zhipuResetError{code: envelope.Code, data: envelope.Data, message: fmt.Sprintf("zhipu coding plan reset: %s", message)}
 	}
 	if data == nil || len(envelope.Data) == 0 {
 		return nil
@@ -180,4 +183,95 @@ func doZhipuResetRequest(ctx context.Context, client *http.Client, method string
 		return errors.New("zhipu coding plan reset: invalid upstream data")
 	}
 	return nil
+}
+
+// zhipuResetError preserves business feedback for the opportunity scheduler.
+type zhipuResetError struct {
+	code    int
+	data    json.RawMessage
+	message string
+}
+
+func (e *zhipuResetError) Error() string { return e.message }
+
+// ZhipuResetOpportunity tracks one account's in-memory cooldown and retry key.
+// The single scheduler goroutine owns it; it is not safe for concurrent use.
+type ZhipuResetOpportunity struct {
+	NextAt   time.Time
+	retryKey string
+}
+
+// Claim polls for a free reset card without consuming any card. Uncertain
+// outcomes keep the same idempotency key for the next scheduled attempt.
+func (s *ZhipuResetOpportunity) Claim(ctx context.Context, client *http.Client, zcodeJWT, accessToken string) (bool, error) {
+	if err := validateZhipuResetCredentials(zcodeJWT, accessToken); err != nil {
+		return false, err
+	}
+	now := time.Now()
+	if now.Before(s.NextAt) {
+		return false, nil
+	}
+	if s.retryKey == "" {
+		s.retryKey = uuid.NewString()
+	}
+	body, err := common.Marshal(map[string]string{"idempotency_key": s.retryKey})
+	if err != nil {
+		return false, err
+	}
+	s.NextAt = now.Add(10 * time.Minute)
+	var result struct {
+		Granted   bool  `json:"granted"`
+		NextTryAt int64 `json:"next_try_at"`
+	}
+	err = doZhipuResetRequest(ctx, client, http.MethodPost, zhipuResetBaseURL+"/api/v1/coding-plan/reset/opportunity", body, zcodeJWT, accessToken, &result)
+	now = time.Now()
+	s.NextAt = now.Add(10 * time.Minute)
+	if err == nil {
+		s.retryKey = ""
+		if !result.Granted && result.NextTryAt > 0 {
+			s.NextAt = time.UnixMilli(result.NextTryAt)
+			if minimum := now.Add(5 * time.Minute); s.NextAt.Before(minimum) {
+				s.NextAt = minimum
+			}
+		}
+		return result.Granted, nil
+	}
+	var upstream *zhipuResetError
+	if !errors.As(err, &upstream) {
+		var networkError net.Error
+		if errors.As(err, &networkError) || errors.Is(err, context.DeadlineExceeded) {
+			s.NextAt = now.Add(5 * time.Minute)
+		} else {
+			s.retryKey = ""
+		}
+		return false, err
+	}
+	if upstream.code == 2007 {
+		s.NextAt = now.Add(5 * time.Minute)
+		return false, err
+	}
+	s.retryKey = ""
+	switch upstream.code {
+	case 3301:
+		var data struct {
+			NextTryAt int64 `json:"next_try_at"`
+		}
+		if len(upstream.data) > 0 {
+			if err := common.Unmarshal(upstream.data, &data); err != nil {
+				return false, errors.New("zhipu reset opportunity: invalid retry time")
+			}
+		}
+		if data.NextTryAt > 0 {
+			s.NextAt = time.UnixMilli(data.NextTryAt)
+			if minimum := now.Add(5 * time.Minute); s.NextAt.Before(minimum) {
+				s.NextAt = minimum
+			}
+		}
+		return false, nil
+	case http.StatusTooManyRequests:
+		s.NextAt = now.Add(10 * time.Minute)
+		return false, nil
+	default:
+		return false, err
+	}
 }
