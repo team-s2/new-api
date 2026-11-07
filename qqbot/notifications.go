@@ -8,29 +8,15 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/controller"
-	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/qqbot/onebot"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
 const channelNoticeBudget = 30 * time.Second
 
-// channelNoticeLines lists the changed channels a chat with this group filter
-// may see, one per line.
-func channelNoticeLines(channels []*model.Channel, group string) string {
-	var lines strings.Builder
-	for _, item := range channels {
-		visible := channel{ID: item.Id, Name: item.Name, Group: item.Group}
-		if visible.inGroup(group) {
-			fmt.Fprintf(&lines, "\n- #%d %s", visible.ID, visible.displayName())
-		}
-	}
-	return lines.String()
-}
-
 // NotifyZhipuResetCards announces successful claims, without consuming cards.
-func NotifyZhipuResetCards(claims []controller.ZhipuResetCardClaim) {
+func NotifyZhipuResetCards(claims []service.ZhipuResetCardClaim) {
 	sendChannelGroupNotice(func(group string) string {
 		var lines strings.Builder
 		for _, claim := range claims {

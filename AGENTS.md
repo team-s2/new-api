@@ -5,6 +5,7 @@
 - 支持 BigModel Coding Plan 和 Grok Subscription。
 - 内置 QQ 机器人（`qqbot/`，OneBot 11 反向 WebSocket），配置和命令见 `docs/ai/2611070300-qq-bot.md`。
 - 智谱 Coding Plan 渠道支持高峰期自动禁用（周一至周五 14:00-18:00 UTC+8），按渠道开启，变更时在绑定的 QQ 群发送提示。
+- 主节点按 ZCode 客户端的节奏自动领取智谱 Coding Plan 重置卡（不自动用卡），领取成功时在绑定的 QQ 群发送提示；行为见 `docs/ai/2609051908-bigmodel-coding-plan.md` 的“自动领取”一节。
 
 本仓库的例行维护流程：
 

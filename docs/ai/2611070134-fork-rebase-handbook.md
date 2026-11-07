@@ -45,7 +45,7 @@
 
 ## 重置卡自动领取增量
 
-`controller/zhipu_reset_opportunity.go` 与 `service/zhipu_coding_plan_reset.go` 实现后台领取，启动入口在 `main.go`。复用现有渠道读取及代理，无新增数据库字段；行为见 [Coding Plan 自动领取](2609051908-bigmodel-coding-plan.md#自动领取)。rebase 时保留领取接口的 `3301` 正常业务态和幂等重试处理。
+`service/zhipu_coding_plan_opportunity.go` 实现后台领取，`service/zhipu_coding_plan_reset.go` 的 `doZhipuResetRequest` 先读信封业务码再看 HTTP 状态，启动入口在 `main.go`，渠道读取为 `model.GetZhipuResetOpportunitySnapshots`。无新增数据库字段；行为见 [Coding Plan 自动领取](2609051908-bigmodel-coding-plan.md#自动领取)。rebase 时保留领取接口的 `3301` 正常业务态和幂等重试处理。
 
 ## 配置与数据影响
 

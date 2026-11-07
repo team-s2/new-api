@@ -135,7 +135,8 @@ func main() {
 	// Grok subscription credential auto-refresh, same cadence as Codex.
 	service.StartGrokCredentialAutoRefreshTask()
 
-	controller.StartZhipuResetOpportunityTask(qqbot.NotifyZhipuResetCards)
+	// Zhipu Coding Plan reset-card claiming, same cadence as the ZCode client.
+	service.StartZhipuResetOpportunityTask(qqbot.NotifyZhipuResetCards)
 
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()

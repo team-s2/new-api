@@ -80,14 +80,27 @@ func (t *commandTurn) setPeak(ctx context.Context, args []string) {
 	t.replyText(fmt.Sprintf("已%s渠道 #%d 的高峰期自动禁用（%s）：%s", verb, id, peakHoursText, target.displayName()))
 }
 
+// peakChannelLines lists the changed channels a chat with this group filter
+// may see, one per line.
+func peakChannelLines(channels []*model.Channel, group string) string {
+	var lines strings.Builder
+	for _, item := range channels {
+		visible := channel{ID: item.Id, Name: item.Name, Group: item.Group}
+		if visible.inGroup(group) {
+			fmt.Fprintf(&lines, "\n- #%d %s", visible.ID, visible.displayName())
+		}
+	}
+	return lines.String()
+}
+
 // peakNotice is the note for a chat with this group filter; empty when none of
 // the changed channels concern it.
 func peakNotice(disabled, restored []*model.Channel, group string) string {
 	var parts []string
-	if lines := channelNoticeLines(disabled, group); lines != "" {
+	if lines := peakChannelLines(disabled, group); lines != "" {
 		parts = append(parts, "智谱 Coding Plan 高峰期（"+peakHoursText+"），已自动禁用渠道："+lines)
 	}
-	if lines := channelNoticeLines(restored, group); lines != "" {
+	if lines := peakChannelLines(restored, group); lines != "" {
 		parts = append(parts, "智谱 Coding Plan 高峰期自动禁用已解除，已恢复渠道："+lines)
 	}
 	return strings.Join(parts, "\n\n")
