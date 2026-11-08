@@ -75,6 +75,8 @@ export const STATIC_I18N_KEYS = [
   'Access Baidu Qianfan models through the V2 API',
   'Connect to self-hosted models served by Xinference',
   'Connect to xAI Grok model services',
+  'Devin Subscription',
+  'Access SWE-2 models through Devin subscription OAuth credentials',
   'Connect to Coze bots',
   'Connect to Kling video generation services',
   'Connect to Jimeng image and video generation services',

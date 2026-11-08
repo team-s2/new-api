@@ -456,6 +456,10 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return normalizeModelNames(models), nil
 	}
 
+	if channel.Type == constant.ChannelTypeDevinSub {
+		return service.FetchDevinChannelModels(channel)
+	}
+
 	url := getUpstreamModelsURL(channel.Type, baseURL)
 
 	key, _, apiErr := channel.GetNextEnabledKey()

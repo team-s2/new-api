@@ -763,6 +763,117 @@ export async function getAntigravityUsage(
 }
 
 // ============================================================================
+// Devin Subscription Channel Operations
+// ============================================================================
+
+export interface DevinOAuthLoginResponse {
+  success: boolean
+  message?: string
+  data?: {
+    authorize_url: string
+    session_id: string
+  }
+}
+
+export interface DevinOAuthExchangeResponse {
+  success: boolean
+  message?: string
+  data?: {
+    credential: string
+  }
+}
+
+export async function startDevinOAuthLogin(
+  signal?: AbortSignal
+): Promise<DevinOAuthLoginResponse> {
+  const res = await api.post(
+    '/api/channel/devin/oauth/login',
+    {},
+    channelActionConfig({ disableDuplicate: true, signal })
+  )
+  return res.data
+}
+
+export async function exchangeDevinOAuthCode(
+  sessionId: string,
+  input: string,
+  signal?: AbortSignal
+): Promise<DevinOAuthExchangeResponse> {
+  const res = await api.post(
+    '/api/channel/devin/oauth/exchange',
+    { session_id: sessionId, input },
+    channelActionConfig({ signal })
+  )
+  return res.data
+}
+
+export async function refreshDevinCredential(
+  channelId: number
+): Promise<CodexCredentialRefreshResponse> {
+  const res = await api.post(
+    `/api/channel/${channelId}/devin/refresh`,
+    {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export interface DevinModelInfo {
+  label?: string
+  model_uid?: string
+  disabled?: boolean
+  is_premium?: boolean
+  is_recommended?: boolean
+  supports_images?: boolean
+  max_tokens?: number
+  allowed_tiers?: number[]
+  pricing_type?: number
+  promo_status?: number
+  model_cost_tier?: number
+  is_new?: boolean
+}
+
+export interface DevinUsageProbe {
+  plan_name?: string
+  teams_tier?: number
+  is_devin?: boolean
+  name?: string
+  email?: string
+  user_id?: string
+  org_id?: string
+  account_display_name?: string
+  pro?: boolean
+  can_use_cascade?: boolean
+  can_use_cli?: boolean
+  available_prompt_credits?: number
+  available_flow_credits?: number
+  available_flex_credits?: number
+  used_prompt_credits?: number
+  used_flow_credits?: number
+  used_flex_credits?: number
+  subagent_default_model_uid?: string
+  models?: DevinModelInfo[]
+  total_catalog_entries?: number
+}
+
+export interface DevinUsageResponse {
+  success: boolean
+  message?: string
+  upstream_status?: number
+  data?: DevinUsageProbe
+}
+
+export async function getDevinUsage(
+  channelId: number
+): Promise<DevinUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/devin/usage`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+// ============================================================================
 // Multi-Key Management
 // ============================================================================
 

@@ -689,6 +689,17 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	// Devin Subscription key is always the JSON credential produced by the
+	// PKCE OAuth login (optionally carrying a durable api_key).
+	if channel.Type == constant.ChannelTypeDevinSub {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if isAdd || trimmedKey != "" {
+			if _, err := service.ParseDevinCredential(trimmedKey); err != nil {
+				return err
+			}
+		}
+	}
+
 	// BigModel Subscription (Coding Plan) key is always the JSON produced by
 	// the OAuth login helper.
 	if channel.Type == constant.ChannelTypeBigModelSub {

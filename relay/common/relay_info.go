@@ -462,6 +462,7 @@ var streamSupportedChannels = map[int]bool{
 	constant.ChannelTypeTencent:        true,
 	constant.ChannelTypeGrokSub:        true,
 	constant.ChannelTypeAntigravitySub: true,
+	constant.ChannelTypeDevinSub:       true,
 }
 
 func GenRelayInfoWs(c *gin.Context, ws *websocket.Conn) *RelayInfo {
