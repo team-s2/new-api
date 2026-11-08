@@ -157,6 +157,7 @@ func ExchangeZhipuOAuthCode(ctx context.Context, client *http.Client, code strin
 	if err != nil {
 		return nil, err
 	}
+	setZcodeSourceHeaders(request.Header, "")
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {

@@ -11,11 +11,12 @@ func (channel *Channel) IsZcodeTrialPlan() bool {
 	return constant.IsZcodeTrialPlanBase(channel.GetBaseURL())
 }
 
-// GetZcodeTrialPlanChannels returns every trial plan channel with the fields plan
-// detection needs. The result must not be saved back.
+// GetZcodeTrialPlanChannels returns the channels of the types that can be trial
+// plans, with the fields plan detection needs. Callers pick the actual trial plan
+// channels with IsZcodeTrialPlan. The result must not be saved back.
 func GetZcodeTrialPlanChannels() ([]*Channel, error) {
 	var channels []*Channel
-	err := DB.Select("id", "name", "type", "status", "base_url", "key", "group", "model").
+	err := DB.Select("id", "name", "type", "status", "base_url", "key", "group", "setting").
 		Where("type IN ?", []int{constant.ChannelTypeZhipu_v4, constant.ChannelTypeBigModelSub}).
 		Find(&channels).Error
 	return channels, err

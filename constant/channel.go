@@ -346,9 +346,12 @@ const ZcodeTrialPlanBaseURL = "https://zcode.z.ai/api/v1/zcode-plan/anthropic"
 // ZcodeTrialPlanPreset is the base URL preset that selects the trial plan relay.
 const ZcodeTrialPlanPreset = "zcode-plan"
 
+// ZcodeClientVersion is the official client version new-api reports to ZCode.
+const ZcodeClientVersion = "3.17.2"
+
 // ZcodeTrialPlanUserAgent is the official client fingerprint the trial plan
 // gateway requires. The casing and the major/minor version are both significant.
-const ZcodeTrialPlanUserAgent = "ZCode/3.17.2"
+const ZcodeTrialPlanUserAgent = "ZCode/" + ZcodeClientVersion
 
 // IsZcodeTrialPlanBase reports whether baseURL addresses the ZCode trial plan
 // relay, either through the preset, the endpoint itself, or a mirror in front of

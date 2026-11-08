@@ -139,6 +139,7 @@ func doZhipuResetRequest(ctx context.Context, client *http.Client, method string
 	if err != nil {
 		return err
 	}
+	setZcodeSourceHeaders(request.Header, zcodeJWT)
 	request.Header.Set("Accept", "application/json, text/plain, */*")
 	if len(body) > 0 {
 		request.Header.Set("Content-Type", "application/json")
