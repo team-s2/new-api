@@ -106,6 +106,28 @@ func backfillAntigravityKeyMetadata(ctx context.Context, ch *model.Channel, key 
 
 	var mergedKey *AntigravityOAuthKey
 	updated, err := model.UpdateChannelCredential(lookupCtx, ch.Id, func(current *model.Channel) (string, error) {
+		if current.Type != constant.ChannelTypeAntigravitySub || current.ChannelInfo.IsMultiKey {
+			return "", fmt.Errorf("channel %d is not a single-key Antigravity subscription channel", current.Id)
+		}
+		currentKey, ok := ParseAntigravityOAuthKey(current.Key)
+		if !ok {
+			return "", fmt.Errorf("channel %d key is not a valid Antigravity OAuth JSON credential", current.Id)
+		}
+		// A login, token rotation, or another metadata lookup may have replaced
+		// the credential while the network requests ran outside the row lock.
+		if current.Key != ch.Key {
+			mergedKey = currentKey
+			return current.Key, nil
+		}
+		if currentKey.Email != "" {
+			metadata.Email = ""
+		}
+		if currentKey.ProjectID != "" {
+			metadata.ProjectID = ""
+		}
+		if currentKey.PlanTier != "" {
+			metadata.PlanTier = ""
+		}
 		merged, err := mergeAntigravityKeyJSON(current.Key, metadata)
 		if err != nil {
 			return "", err

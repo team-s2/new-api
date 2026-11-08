@@ -22,8 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const defaultAntigravityProjectID = "bamboo-precept-lgxtn"
-
 type Adaptor struct {
 	gemini.Adaptor
 }
@@ -139,18 +137,20 @@ func wrapAntigravityRequest(info *relaycommon.RelayInfo, converted any) (any, er
 		if fnConfig == nil {
 			fnConfig = make(map[string]any)
 		}
-		fnConfig["mode"] = "VALIDATED"
+		if mode, _ := fnConfig["mode"].(string); mode == "" || mode == "AUTO" {
+			fnConfig["mode"] = "VALIDATED"
+		}
 		toolConfig["functionCallingConfig"] = fnConfig
 		reqMap["toolConfig"] = toolConfig
 	}
 
-	projectID := defaultAntigravityProjectID
-	if parsedKey, ok := service.ParseAntigravityOAuthKey(info.ApiKey); ok && parsedKey.ProjectID != "" {
-		projectID = parsedKey.ProjectID
+	parsedKey, ok := service.ParseAntigravityOAuthKey(info.ApiKey)
+	if !ok || parsedKey.ProjectID == "" {
+		return nil, errors.New("antigravity credential is missing project_id; sign in again or refresh the credential to discover the account project")
 	}
 
 	return map[string]any{
-		"project":     projectID,
+		"project":     parsedKey.ProjectID,
 		"requestId":   "agent-" + common.GetUUID(),
 		"requestType": "agent",
 		"userAgent":   "antigravity",

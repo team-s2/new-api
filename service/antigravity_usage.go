@@ -135,15 +135,10 @@ func FetchAntigravityChannelModels(ctx context.Context, baseURL, rawKey, proxyUR
 			lastErr = parseErr
 			continue
 		}
-		if len(models) > 0 {
-			return models, nil
-		}
+		return models, nil
 	}
 
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return DefaultAntigravityModels(), nil
+	return nil, lastErr
 }
 
 func parseAntigravityAvailableModelsList(body []byte) ([]string, error) {
@@ -157,7 +152,7 @@ func parseAntigravityAvailableModelsList(body []byte) ([]string, error) {
 		return nil, nil
 	}
 
-	seen := make(map[string]struct{}, len(parsed.Models)+len(DefaultAntigravityModels()))
+	seen := make(map[string]struct{}, len(parsed.Models))
 	addModel := func(id string) {
 		id = strings.TrimSpace(id)
 		if id == "" {
@@ -173,9 +168,6 @@ func parseAntigravityAvailableModelsList(body []byte) ([]string, error) {
 		if !antigravitySkipDiscoveryModels[modelID] {
 			addModel(modelID)
 		}
-	}
-	for _, builtin := range DefaultAntigravityModels() {
-		addModel(builtin)
 	}
 
 	result := make([]string, 0, len(seen))

@@ -249,10 +249,15 @@ func ExchangeAntigravityOAuthCode(ctx context.Context, ownerSession, sessionID, 
 	if email, emailErr := fetchAntigravityUserEmail(ctx, key.AccessToken, proxyURL); emailErr == nil && email != "" {
 		key.Email = email
 	}
-	if projectID, planTier, projErr := FetchAntigravityProjectAndTier(ctx, key.AccessToken, proxyURL); projErr == nil {
-		key.ProjectID = projectID
-		key.PlanTier = planTier
+	projectID, planTier, err := FetchAntigravityProjectAndTier(ctx, key.AccessToken, proxyURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to discover Antigravity project: %w", err)
 	}
+	if strings.TrimSpace(projectID) == "" {
+		return nil, errors.New("Antigravity project discovery returned an empty project ID")
+	}
+	key.ProjectID = projectID
+	key.PlanTier = planTier
 
 	raw, err := common.Marshal(key)
 	if err != nil {

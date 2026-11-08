@@ -94,7 +94,7 @@ func runAntigravityCredentialAutoRefreshOnce() {
 				continue
 			}
 
-			oauthKey, updated, refreshErr := refreshAntigravityChannelCredential(ctx, ch, false)
+			oauthKey, updated, refreshErr := refreshAntigravityChannelCredential(ctx, ch, true)
 			if refreshErr != nil {
 				logger.LogError(ctx, fmt.Sprintf("antigravity credential auto-refresh: channel #%d failed: %v", ch.Id, refreshErr))
 				continue
