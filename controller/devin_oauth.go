@@ -94,6 +94,7 @@ func ExchangeDevinOAuthCode(c *gin.Context) {
 // durable api_key when one is stored. OAuth-only credentials cannot be
 // refreshed and require logging in again.
 func RefreshDevinChannelCredential(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	channelId, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		common.ApiError(c, fmt.Errorf("invalid channel id: %w", err))
@@ -109,6 +110,10 @@ func RefreshDevinChannelCredential(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel type is not Devin Subscription"})
 		return
 	}
+	if ch.ChannelInfo.IsMultiKey {
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "multi-key channel is not supported"})
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
@@ -122,8 +127,8 @@ func RefreshDevinChannelCredential(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "channel has no durable api_key; please log in again via OAuth"})
 		return
 	}
-	if _, err := service.EnsureDevinChannelSessionToken(ctx, ch); err != nil {
-		common.SysError("failed to refresh devin channel credential: " + err.Error())
+	if _, err := service.RefreshDevinChannelSessionToken(ctx, ch); err != nil {
+		common.SysError(fmt.Sprintf("failed to refresh devin channel credential for channel %d", ch.Id))
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Failed to refresh credential, please try again later"})
 		return
 	}

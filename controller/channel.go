@@ -1560,9 +1560,8 @@ func FetchModels(c *gin.Context) {
 			baseURL = constant.GetChannelBaseURL(req.Type)
 		}
 
-		// Remove extra spaces and select the first key for batch input. Coding Plan
-		// credentials must be parsed before splitting because their JSON may span
-		// multiple lines.
+		// Remove extra spaces and select the first key for batch input. Structured
+		// credentials must remain intact because their JSON may span multiple lines.
 		key := strings.TrimSpace(req.Key)
 		key, err := normalizeFetchModelsKey(req.Type, baseURL, key)
 		if err != nil {
@@ -1574,7 +1573,8 @@ func FetchModels(c *gin.Context) {
 		}
 		if req.Type != constant.ChannelTypeCodex &&
 			req.Type != constant.ChannelTypeGrokSub &&
-			req.Type != constant.ChannelTypeAntigravitySub {
+			req.Type != constant.ChannelTypeAntigravitySub &&
+			req.Type != constant.ChannelTypeDevinSub {
 			key = strings.Split(key, "\n")[0]
 		}
 		channel = &model.Channel{

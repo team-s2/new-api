@@ -3,10 +3,11 @@ package service
 import (
 	"context"
 	"errors"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -40,14 +41,6 @@ type DevinUsageProbe struct {
 	OrgID               string           `json:"org_id,omitempty"`
 	AccountDisplayName  string           `json:"account_display_name,omitempty"`
 	IsPro               bool             `json:"pro,omitempty"`
-	CanUseCascade       bool             `json:"can_use_cascade,omitempty"`
-	CanUseCLI           bool             `json:"can_use_cli,omitempty"`
-	PromptCredits       int64            `json:"available_prompt_credits,omitempty"`
-	FlowCredits         int64            `json:"available_flow_credits,omitempty"`
-	FlexCredits         int64            `json:"available_flex_credits,omitempty"`
-	UsedPromptCredits   int64            `json:"used_prompt_credits,omitempty"`
-	UsedFlowCredits     int64            `json:"used_flow_credits,omitempty"`
-	UsedFlexCredits     int64            `json:"used_flex_credits,omitempty"`
 	SubagentDefaultUID  string           `json:"subagent_default_model_uid,omitempty"`
 	Models              []DevinModelInfo `json:"models,omitempty"`
 	TotalCatalogEntries int              `json:"total_catalog_entries,omitempty"`
@@ -88,7 +81,8 @@ func FetchDevinUsage(ctx context.Context, cred *DevinCredential, baseURL, proxyU
 }
 
 // decodeDevinUserStatus parses ExaSeatManagementPb_GetUserStatusResponse:
-// { user_status: 1, plan_info: 2 }.
+// { user_status: 1, plan_info: 2 }. Unverified credit and permission fields
+// are deliberately omitted until their schema and units are confirmed.
 func decodeDevinUserStatus(payload []byte, probe *DevinUsageProbe) {
 	fields := devinDecodeWireFields(payload)
 
@@ -97,8 +91,6 @@ func decodeDevinUserStatus(payload []byte, probe *DevinUsageProbe) {
 		probe.PlanName = devinFirstString(planInfoFields, 2)
 		probe.IsDevin = devinFirstVarint(planInfoFields, 34) != 0
 		if devinInfo := devinFirstSubfields(planInfoFields, 33); devinInfo != nil {
-			probe.CanUseCascade = devinFirstVarint(devinInfo, 1) != 0
-			probe.CanUseCLI = devinFirstVarint(devinInfo, 2) != 0
 			if probe.OrgID == "" {
 				probe.OrgID = devinFirstString(devinInfo, 4)
 			}
@@ -114,33 +106,29 @@ func decodeDevinUserStatus(payload []byte, probe *DevinUsageProbe) {
 	probe.Name = devinFirstString(userStatus, 3)
 	probe.Email = devinFirstString(userStatus, 7)
 	probe.UserID = devinFirstString(userStatus, 36)
-	if planStatus := devinFirstSubfields(userStatus, 13); planStatus != nil {
-		probe.FlexCredits = devinFirstInt64(planStatus, 4)
-		probe.UsedFlowCredits = devinFirstInt64(planStatus, 5)
-		probe.UsedPromptCredits = devinFirstInt64(planStatus, 6)
-		probe.UsedFlexCredits = devinFirstInt64(planStatus, 7)
-		probe.PromptCredits = devinFirstInt64(planStatus, 8)
-		probe.FlowCredits = devinFirstInt64(planStatus, 9)
-	}
 }
 
 // decodeDevinModelCatalog parses GetCliModelConfigsResponse and keeps only the
 // two SWE-2 families this channel serves.
 func decodeDevinModelCatalog(payload []byte, probe *DevinUsageProbe) {
 	fields := devinDecodeWireFields(payload)
-	probe.SubagentDefaultUID = devinFirstString(fields, 4)
+	if uid := strings.ToLower(strings.TrimSpace(devinFirstString(fields, 4))); uid != "" {
+		if resolved, ok := common.ResolveDevinModelUID(uid); ok && resolved == uid {
+			probe.SubagentDefaultUID = uid
+		}
+	}
 
 	configs := fields[1]
 	probe.TotalCatalogEntries = len(configs)
 	for _, cfgBytes := range configs {
 		cfg := devinDecodeWireFields(cfgBytes)
-		modelUID := devinFirstString(cfg, 22)
-		label := devinFirstString(cfg, 1)
-		if !isSWE2Family(modelUID) && !isSWE2Family(label) {
+		modelUID := strings.ToLower(strings.TrimSpace(devinFirstString(cfg, 22)))
+		resolved, supported := common.ResolveDevinModelUID(modelUID)
+		if !supported || resolved != modelUID {
 			continue
 		}
 		info := DevinModelInfo{
-			Label:          label,
+			Label:          devinFirstString(cfg, 1),
 			ModelUID:       modelUID,
 			Disabled:       devinFirstVarint(cfg, 4) != 0,
 			IsPremium:      devinFirstVarint(cfg, 7) != 0,
@@ -157,29 +145,9 @@ func decodeDevinModelCatalog(payload []byte, probe *DevinUsageProbe) {
 	}
 }
 
-func isSWE2Family(s string) bool {
-	s = strings.ToLower(strings.TrimSpace(s))
-	return s == "swe-2" || strings.HasPrefix(s, "swe-2-") || strings.Contains(s, "swe_2")
-}
-
-// isSupportedDevinModelUID mirrors the whitelist in
-// relay/channel/devinsub.ResolveModelUID (kept separate to avoid a service→
-// relay import cycle): catalog entries outside it are listed in the usage
-// dialog but never offered as syncable models.
-func isSupportedDevinModelUID(uid string) bool {
-	switch strings.ToLower(strings.TrimSpace(uid)) {
-	case "swe-2-low", "swe-2-medium", "swe-2-high", "swe-2-max",
-		"swe-2-low-usa", "swe-2-high-usa", "swe-2-max-usa",
-		"swe-2-medium-lightning", "swe-2-high-lightning", "swe-2-max-lightning",
-		"swe-2-flash-low", "swe-2-flash-medium", "swe-2-flash-high", "swe-2-flash-max":
-		return true
-	}
-	return false
-}
-
 // FetchDevinChannelModels queries the account model catalog and returns the
 // SWE-2 model_uids the channel can serve, plus the bare family aliases when
-// the family is present in the catalog.
+// the corresponding high-effort model is enabled in the catalog.
 func FetchDevinChannelModels(channel *model.Channel) ([]string, error) {
 	key, _, apiErr := channel.GetNextEnabledKey()
 	if apiErr != nil {
@@ -202,21 +170,22 @@ func FetchDevinChannelModels(channel *model.Channel) ([]string, error) {
 	hasSWE2, hasFlash := false, false
 	for _, m := range probe.Models {
 		uid := strings.ToLower(strings.TrimSpace(m.ModelUID))
-		if uid == "" || m.Disabled || seen[uid] || !isSupportedDevinModelUID(uid) {
+		resolved, supported := common.ResolveDevinModelUID(uid)
+		if !supported || resolved != uid || m.Disabled || seen[uid] {
 			continue
 		}
 		seen[uid] = true
 		models = append(models, uid)
-		if strings.HasPrefix(uid, "swe-2-flash") {
+		if uid == "swe-2-flash-high" {
 			hasFlash = true
-		} else if strings.HasPrefix(uid, "swe-2") {
+		} else if uid == "swe-2-high" {
 			hasSWE2 = true
 		}
 	}
 	if len(models) == 0 {
 		return nil, errors.New("devin subscription channel: catalog returned no swe-2 family models")
 	}
-	sort.Strings(models)
+	slices.Sort(models)
 	if hasFlash {
 		models = append([]string{"swe-2-flash"}, models...)
 	}

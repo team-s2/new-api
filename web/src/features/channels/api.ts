@@ -843,14 +843,6 @@ export interface DevinUsageProbe {
   org_id?: string
   account_display_name?: string
   pro?: boolean
-  can_use_cascade?: boolean
-  can_use_cli?: boolean
-  available_prompt_credits?: number
-  available_flow_credits?: number
-  available_flex_credits?: number
-  used_prompt_credits?: number
-  used_flow_credits?: number
-  used_flex_credits?: number
   subagent_default_model_uid?: string
   models?: DevinModelInfo[]
   total_catalog_entries?: number

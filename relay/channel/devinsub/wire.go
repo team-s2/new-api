@@ -43,6 +43,47 @@ type devinTool struct {
 	Parameters  []byte `json:"parameters,omitempty"`
 }
 
+// devinToolChoice is the oneof selection in request field 12.
+type devinToolChoice struct {
+	OptionName string `json:"option_name,omitempty"`
+	ToolName   string `json:"tool_name,omitempty"`
+}
+
+func parseDevinToolChoice(value any, tools []devinTool) (*devinToolChoice, error) {
+	if value == nil {
+		return nil, nil
+	}
+	if option, ok := value.(string); ok {
+		switch option {
+		case "none", "auto", "required":
+			return &devinToolChoice{OptionName: option}, nil
+		default:
+			return nil, fmt.Errorf("devin subscription channel: unsupported tool_choice %q", option)
+		}
+	}
+	encoded, err := common.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("devin subscription channel: invalid tool_choice: %w", err)
+	}
+	var choice struct {
+		Type     string `json:"type"`
+		Function struct {
+			Name string `json:"name"`
+		} `json:"function"`
+	}
+	if err := common.Unmarshal(encoded, &choice); err != nil {
+		return nil, fmt.Errorf("devin subscription channel: invalid tool_choice: %w", err)
+	}
+	if choice.Type == "function" && choice.Function.Name != "" {
+		for _, tool := range tools {
+			if tool.Name == choice.Function.Name {
+				return &devinToolChoice{ToolName: tool.Name}, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("devin subscription channel: tool_choice must select a declared function")
+}
+
 // devinToolCall is a completed call embedded in an assistant prompt.
 type devinToolCall struct {
 	ID        string `json:"id,omitempty"`
@@ -241,6 +282,7 @@ func buildGetChatMessageRequest(
 	systemPrompt string,
 	prompts []devinPrompt,
 	tools []devinTool,
+	toolChoice *devinToolChoice,
 	temperature *float64,
 	maxTokens int,
 	sessionID string,
@@ -387,6 +429,20 @@ func buildGetChatMessageRequest(
 		}
 		reqBytes = protowire.AppendTag(reqBytes, 10, protowire.BytesType)
 		reqBytes = protowire.AppendBytes(reqBytes, tBytes)
+	}
+
+	// Field 12: tool choice (option_name=1 or tool_name=2).
+	if toolChoice != nil {
+		var choiceBytes []byte
+		if toolChoice.ToolName != "" {
+			choiceBytes = protowire.AppendTag(choiceBytes, 2, protowire.BytesType)
+			choiceBytes = protowire.AppendString(choiceBytes, toolChoice.ToolName)
+		} else {
+			choiceBytes = protowire.AppendTag(choiceBytes, 1, protowire.BytesType)
+			choiceBytes = protowire.AppendString(choiceBytes, toolChoice.OptionName)
+		}
+		reqBytes = protowire.AppendTag(reqBytes, 12, protowire.BytesType)
+		reqBytes = protowire.AppendBytes(reqBytes, choiceBytes)
 	}
 
 	// Field 15: thread session metadata.
@@ -662,7 +718,7 @@ func isPrintableASCII(b []byte) bool {
 // maps the embedded error to an HTTP-like status code.
 func parseDevinTrailerError(payload []byte) (statusCode int, err error) {
 	trimmed := bytes.TrimSpace(payload)
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("{}")) {
+	if bytes.Equal(trimmed, []byte("{}")) {
 		return 0, nil
 	}
 	var trailer struct {
@@ -671,7 +727,13 @@ func parseDevinTrailerError(payload []byte) (statusCode int, err error) {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	if err := common.Unmarshal(trimmed, &trailer); err != nil || trailer.Error == nil {
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return 502, fmt.Errorf("devin upstream: invalid end-stream trailer")
+	}
+	if err := common.Unmarshal(trimmed, &trailer); err != nil {
+		return 502, fmt.Errorf("devin upstream: invalid end-stream trailer: %w", err)
+	}
+	if trailer.Error == nil {
 		return 0, nil
 	}
 

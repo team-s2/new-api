@@ -28,14 +28,15 @@ type Adaptor struct {
 // devinUpstreamRequest is the internal JSON handoff between Convert* and
 // DoRequest (the relay handler marshals whatever Convert* returns).
 type devinUpstreamRequest struct {
-	Model       string        `json:"model"`
-	System      string        `json:"system,omitempty"`
-	Prompts     []devinPrompt `json:"prompts"`
-	Tools       []devinTool   `json:"tools,omitempty"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	MaxTokens   int           `json:"max_tokens,omitempty"`
-	SessionID   string        `json:"session_id,omitempty"`
-	CascadeID   string        `json:"cascade_id,omitempty"`
+	Model       string           `json:"model"`
+	System      string           `json:"system,omitempty"`
+	Prompts     []devinPrompt    `json:"prompts"`
+	Tools       []devinTool      `json:"tools,omitempty"`
+	ToolChoice  *devinToolChoice `json:"tool_choice,omitempty"`
+	Temperature *float64         `json:"temperature,omitempty"`
+	MaxTokens   int              `json:"max_tokens,omitempty"`
+	SessionID   string           `json:"session_id,omitempty"`
+	CascadeID   string           `json:"cascade_id,omitempty"`
 }
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
@@ -54,29 +55,10 @@ func (a *Adaptor) SetupRequestHeader(_ *gin.Context, _ *http.Header, _ *relaycom
 	return nil
 }
 
-// dataURLParts splits a data URI into mime type and base64 payload.
-func dataURLParts(url string) (mime, b64 string, ok bool) {
-	if !strings.HasPrefix(url, "data:") {
-		return "", "", false
-	}
-	head, payload, found := strings.Cut(url[5:], ",")
-	if !found {
-		return "", "", false
-	}
-	mime = head
-	if idx := strings.Index(mime, ";"); idx >= 0 {
-		mime = mime[:idx]
-	}
-	if mime == "" {
-		mime = "image/png"
-	}
-	return mime, payload, true
-}
-
 // openAIRequestToDevin maps a GeneralOpenAIRequest onto the Devin prompt
 // history: system/developer messages merge into the system prompt, user=1,
 // assistant=2 (with tool calls + thinking), tool=4 (with tool_call_id).
-func openAIRequestToDevin(request *dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*devinUpstreamRequest, error) {
+func openAIRequestToDevin(c *gin.Context, request *dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*devinUpstreamRequest, error) {
 	modelUID, ok := ResolveModelUID(request.Model)
 	if !ok {
 		return nil, fmt.Errorf("devin subscription channel only serves swe-2 / swe-2-flash family models, got %q", request.Model)
@@ -102,11 +84,18 @@ func openAIRequestToDevin(request *dto.GeneralOpenAIRequest, info *relaycommon.R
 					case dto.ContentTypeText:
 						textParts = append(textParts, part.Text)
 					case dto.ContentTypeImageURL:
-						if img := part.GetImageMedia(); img != nil {
-							if mime, data, ok := dataURLParts(img.Url); ok {
-								p.Images = append(p.Images, devinImage{Base64Data: data, MimeType: mime})
-							}
+						source := part.ToFileSource()
+						if source == nil {
+							return nil, errors.New("devin subscription channel: image URL is required")
 						}
+						data, mime, err := service.GetBase64Data(c, source, "fetch image for Devin chat")
+						if err != nil {
+							return nil, fmt.Errorf("devin subscription channel: load image: %w", err)
+						}
+						if !strings.HasPrefix(mime, "image/") {
+							return nil, errors.New("devin subscription channel: attachment must be an image")
+						}
+						p.Images = append(p.Images, devinImage{Base64Data: data, MimeType: mime})
 					}
 				}
 				p.Content = strings.Join(textParts, "\n")
@@ -153,6 +142,11 @@ func openAIRequestToDevin(request *dto.GeneralOpenAIRequest, info *relaycommon.R
 		})
 	}
 
+	toolChoice, err := parseDevinToolChoice(request.ToolChoice, tools)
+	if err != nil {
+		return nil, err
+	}
+
 	maxTokens := int(request.GetMaxTokens())
 	var temperature *float64
 	if request.Temperature != nil {
@@ -177,6 +171,7 @@ func openAIRequestToDevin(request *dto.GeneralOpenAIRequest, info *relaycommon.R
 		System:      strings.Join(systemParts, "\n\n"),
 		Prompts:     prompts,
 		Tools:       tools,
+		ToolChoice:  toolChoice,
 		Temperature: temperature,
 		MaxTokens:   maxTokens,
 		SessionID:   sessionID,
@@ -184,8 +179,8 @@ func openAIRequestToDevin(request *dto.GeneralOpenAIRequest, info *relaycommon.R
 	}, nil
 }
 
-func (a *Adaptor) ConvertOpenAIRequest(_ *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
-	return openAIRequestToDevin(request, info)
+func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
+	return openAIRequestToDevin(c, request, info)
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.ClaudeRequest) (any, error) {
@@ -197,7 +192,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 	if !ok {
 		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
 	}
-	return openAIRequestToDevin(aiRequest, info)
+	return openAIRequestToDevin(c, aiRequest, info)
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
@@ -209,7 +204,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	if !ok {
 		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
 	}
-	return openAIRequestToDevin(aiRequest, info)
+	return openAIRequestToDevin(c, aiRequest, info)
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
@@ -221,6 +216,11 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err := common.Unmarshal(body, &upReq); err != nil {
 		return nil, fmt.Errorf("devin subscription channel: invalid converted request: %w", err)
 	}
+	modelUID, ok := ResolveModelUID(upReq.Model)
+	if !ok {
+		return nil, fmt.Errorf("devin subscription channel only serves swe-2 / swe-2-flash family models, got %q", upReq.Model)
+	}
+	upReq.Model = modelUID
 
 	cred, err := service.ParseDevinCredential(info.ApiKey)
 	if err != nil {
@@ -233,6 +233,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 		upReq.System,
 		upReq.Prompts,
 		upReq.Tools,
+		upReq.ToolChoice,
 		upReq.Temperature,
 		upReq.MaxTokens,
 		upReq.SessionID,
@@ -272,11 +273,11 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	// upstream error (bad model, quota exhausted) must surface as an HTTP
 	// error rather than an empty completion.
 	firstFlag, firstPayload, err := readConnectFrame(resp.Body)
-	if err != nil && err != io.EOF {
+	if err != nil {
 		resp.Body.Close()
 		return nil, fmt.Errorf("devin subscription channel: read upstream stream: %w", err)
 	}
-	if err == nil && firstFlag&connectFlagEndStream != 0 {
+	if firstFlag&connectFlagEndStream != 0 {
 		if statusCode, trailerErr := parseDevinTrailerError(firstPayload); trailerErr != nil {
 			resp.Body.Close()
 			resp.StatusCode = statusCode
@@ -296,14 +297,14 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 
 	if info.IsStream {
 		// Translate Connect frames into OpenAI chunk SSE on the fly.
-		resp.Body = streamDevinAsOpenAISSE(resp.Body, firstFlag, firstPayload, err == io.EOF, info.UpstreamModelName)
+		resp.Body = streamDevinAsOpenAISSE(resp.Body, firstFlag, firstPayload, info.UpstreamModelName)
 		resp.Header.Set("Content-Type", "text/event-stream")
 		resp.Header.Del("Content-Length")
 		return resp, nil
 	}
 
 	// Non-stream: aggregate the full frame stream eagerly.
-	jsonBody, closeErr := aggregateDevinResponse(resp.Body, firstFlag, firstPayload, err == io.EOF, info.UpstreamModelName)
+	jsonBody, closeErr := aggregateDevinResponse(resp.Body, firstFlag, firstPayload, info.UpstreamModelName)
 	resp.Body.Close()
 	if closeErr != nil {
 		return nil, closeErr
@@ -337,8 +338,8 @@ func (a *Adaptor) GetChannelName() string {
 // streamDevinAsOpenAISSE spawns a translator goroutine feeding an io.Pipe with
 // `data: {chat.completion.chunk}\n\n` lines terminated by `data: [DONE]`.
 // `firstFlag`/`firstPayload` carry the eagerly-peeked first frame (may be a
-// data frame, a clean end-stream, or empty when the stream hit EOF).
-func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload []byte, hitEOF bool, model string) io.ReadCloser {
+// data frame or a clean end-stream).
+func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload []byte, model string) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
 		var writeErr error
@@ -361,7 +362,8 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 		emit := func(chunk *dto.ChatCompletionsStreamResponse) bool {
 			data, err := common.Marshal(chunk)
 			if err != nil {
-				return true
+				writeErr = err
+				return false
 			}
 			if _, err := pw.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
 				writeErr = err
@@ -384,29 +386,59 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 			return emit(chunk)
 		}
 
-		if !hitEOF && processDevinPayload(firstFlag, firstPayload, newChunk, emit, emitDelta, pw, &toolIndexByCall, &toolIndexCount, &sentRole, &contentBuf, &thinkingBuf) {
-			return
-		}
-		if hitEOF {
-			goto done
-		}
+		var terminalFrame devinFrameResult
+		var upstreamErr error
+		flag, payload := firstFlag, firstPayload
 		for {
-			flag, payload, err := readConnectFrame(upstream)
-			if err != nil {
-				if err != io.EOF && err != io.ErrUnexpectedEOF {
-					writeErr = emitUpstreamError(pw, err.Error())
-					return
-				}
-				break
+			var frame devinFrameResult
+			var err error
+			if flag&connectFlagEndStream != 0 {
+				_, err = parseDevinTrailerError(payload)
+			} else {
+				frame, err = parseDevinFrame(payload)
 			}
-			if processDevinPayload(flag, payload, newChunk, emit, emitDelta, pw, &toolIndexByCall, &toolIndexCount, &sentRole, &contentBuf, &thinkingBuf) {
-				return
+			if err != nil {
+				upstreamErr = err
+				break
 			}
 			if flag&connectFlagEndStream != 0 {
 				break
 			}
+			// Protocol bridges may finalize on usage or finish_reason. Hold both
+			// until the Connect trailer confirms the request actually succeeded.
+			if frame.Usage != nil {
+				terminalFrame.Usage = frame.Usage
+				frame.Usage = nil
+			}
+			if frame.StopReason != 0 {
+				terminalFrame.StopReason = frame.StopReason
+				frame.StopReason = 0
+			}
+			if processDevinPayload(frame, newChunk, emit, emitDelta, &toolIndexByCall, &toolIndexCount, &sentRole, &contentBuf, &thinkingBuf) {
+				return
+			}
+			flag, payload, err = readConnectFrame(upstream)
+			if err != nil {
+				upstreamErr = fmt.Errorf("devin stream ended before end-stream trailer: %w", err)
+				break
+			}
 		}
-	done:
+		if upstreamErr != nil {
+			// Preserve authoritative usage for partial-output settlement. The
+			// handler consumes it without emitting a successful terminal event
+			// when the immediately following chunk is an error.
+			if terminalFrame.Usage != nil {
+				chunk := newChunk()
+				chunk.Choices = []dto.ChatCompletionsStreamResponseChoice{}
+				chunk.Usage = devinUsageToOpenAI(terminalFrame.Usage)
+				if !emit(chunk) {
+					return
+				}
+			}
+			writeErr = upstreamErr
+			_ = emitUpstreamError(pw, upstreamErr.Error())
+			return
+		}
 		// Flush trailing partial UTF-8 bytes defensively.
 		if tail := thinkingBuf.feed(nil); tail != "" {
 			if !emitDelta(func(d *dto.ChatCompletionsStreamResponseChoiceDelta) { d.SetReasoningContent(tail) }) {
@@ -418,6 +450,9 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 				return
 			}
 		}
+		if processDevinPayload(terminalFrame, newChunk, emit, emitDelta, &toolIndexByCall, &toolIndexCount, &sentRole, &contentBuf, &thinkingBuf) {
+			return
+		}
 		if _, err := pw.Write([]byte("data: [DONE]\n\n")); err != nil {
 			writeErr = err
 		}
@@ -426,27 +461,17 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 }
 
 // processDevinPayload handles one frame: returns true when the stream must
-// terminate (write error or trailer error already emitted).
+// terminate because writing the converted chunk failed.
 func processDevinPayload(
-	flag byte,
-	payload []byte,
+	frame devinFrameResult,
 	newChunk func() *dto.ChatCompletionsStreamResponse,
 	emit func(*dto.ChatCompletionsStreamResponse) bool,
 	emitDelta func(func(*dto.ChatCompletionsStreamResponseChoiceDelta)) bool,
-	pw io.Writer,
 	toolIndexByCall *map[string]int,
 	toolIndexCount *int,
 	sentRole *bool,
 	contentBuf, thinkingBuf *utf8SplitBuffer,
 ) bool {
-	if flag&connectFlagEndStream != 0 {
-		return false
-	}
-	frame, err := parseDevinFrame(payload)
-	if err != nil {
-		return false
-	}
-
 	if !*sentRole && (frame.ContentText != "" || frame.ThinkingText != "" || len(frame.ToolCallDeltas) > 0) {
 		*sentRole = true
 		if !emitDelta(func(d *dto.ChatCompletionsStreamResponseChoiceDelta) { d.Role = "assistant" }) {
@@ -525,8 +550,7 @@ func emitUpstreamError(w io.Writer, message string) error {
 	if _, err := w.Write([]byte("data: " + string(data) + "\n\n")); err != nil {
 		return err
 	}
-	_, err = w.Write([]byte("data: [DONE]\n\n"))
-	return err
+	return nil
 }
 
 func devinUsageToOpenAI(u *devinUsage) *dto.Usage {
@@ -546,8 +570,8 @@ func devinUsageToOpenAI(u *devinUsage) *dto.Usage {
 
 // aggregateDevinResponse drains the upstream frame stream into a single
 // OpenAI chat.completion JSON body. firstFlag/firstPayload are the
-// eagerly-peeked first frame; hitEOF means the stream ended before any frame.
-func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []byte, hitEOF bool, model string) ([]byte, error) {
+// eagerly-peeked first frame. A valid Connect stream must end with a trailer.
+func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []byte, model string) ([]byte, error) {
 	var contentBuilder, thinkingBuilder strings.Builder
 	var contentBuf, thinkingBuf utf8SplitBuffer
 
@@ -566,7 +590,7 @@ func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []b
 		}
 		frame, err := parseDevinFrame(payload)
 		if err != nil {
-			return false, nil
+			return false, err
 		}
 		thinkingBuilder.WriteString(thinkingBuf.feed([]byte(frame.ThinkingText)))
 		contentBuilder.WriteString(contentBuf.feed([]byte(frame.ContentText)))
@@ -595,28 +619,18 @@ func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []b
 		return false, nil
 	}
 
-	if !hitEOF {
-		stop, err := consume(firstFlag, firstPayload)
+	flag, payload := firstFlag, firstPayload
+	for {
+		stop, err := consume(flag, payload)
 		if err != nil {
 			return nil, err
 		}
-		if !stop {
-			for {
-				flag, payload, err := readConnectFrame(upstream)
-				if err != nil {
-					if err == io.EOF || err == io.ErrUnexpectedEOF {
-						break
-					}
-					return nil, err
-				}
-				stop, err := consume(flag, payload)
-				if err != nil {
-					return nil, err
-				}
-				if stop {
-					break
-				}
-			}
+		if stop {
+			break
+		}
+		flag, payload, err = readConnectFrame(upstream)
+		if err != nil {
+			return nil, fmt.Errorf("devin stream ended before end-stream trailer: %w", err)
 		}
 	}
 	contentBuilder.WriteString(contentBuf.feed(nil))

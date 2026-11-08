@@ -1,6 +1,6 @@
 package devinsub
 
-import "strings"
+import "github.com/QuantumNous/new-api/common"
 
 const (
 	ChannelName = "Devin Subscription"
@@ -34,39 +34,10 @@ const (
 
 // ModelList exposes only the two SWE-2 families. Bare names alias to the
 // high-effort tier, matching devin-cli defaults.
-var ModelList = []string{
-	"swe-2",
-	"swe-2-low",
-	"swe-2-medium",
-	"swe-2-high",
-	"swe-2-max",
-	"swe-2-medium-lightning",
-	"swe-2-high-lightning",
-	"swe-2-max-lightning",
-	"swe-2-flash",
-	"swe-2-flash-low",
-	"swe-2-flash-medium",
-	"swe-2-flash-high",
-	"swe-2-flash-max",
-}
+var ModelList = common.DevinModels()
 
 // ResolveModelUID maps a client-facing model name to the upstream
-// chat_model_uid. Unknown effort tails pass through only inside the two
-// allowed families; anything else is rejected.
+// chat_model_uid using the same exact catalog as account model discovery.
 func ResolveModelUID(model string) (string, bool) {
-	m := strings.ToLower(strings.TrimSpace(model))
-	switch m {
-	case "swe-2":
-		return "swe-2-high", true
-	case "swe-2-flash":
-		return "swe-2-flash-high", true
-	}
-	switch m {
-	case "swe-2-low", "swe-2-medium", "swe-2-high", "swe-2-max",
-		"swe-2-low-usa", "swe-2-high-usa", "swe-2-max-usa",
-		"swe-2-medium-lightning", "swe-2-high-lightning", "swe-2-max-lightning",
-		"swe-2-flash-low", "swe-2-flash-medium", "swe-2-flash-high", "swe-2-flash-max":
-		return m, true
-	}
-	return "", false
+	return common.ResolveDevinModelUID(model)
 }

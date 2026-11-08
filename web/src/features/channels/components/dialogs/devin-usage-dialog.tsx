@@ -53,11 +53,6 @@ type DevinUsageDialogProps = {
   isRefreshing?: boolean
 }
 
-function formatCount(value: unknown): string {
-  const v = Number(value)
-  return Number.isFinite(v) && v >= 0 ? String(v) : '-'
-}
-
 export function DevinUsageDialog(props: DevinUsageDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
@@ -88,24 +83,6 @@ export function DevinUsageDialog(props: DevinUsageDialogProps) {
       return String(props.response?.data ?? '')
     }
   }, [props.response])
-
-  const creditRows = [
-    {
-      label: t('Prompt credits'),
-      used: usage?.used_prompt_credits,
-      available: usage?.available_prompt_credits,
-    },
-    {
-      label: t('Flow credits'),
-      used: usage?.used_flow_credits,
-      available: usage?.available_flow_credits,
-    },
-    {
-      label: t('Flex credits'),
-      used: usage?.used_flex_credits,
-      available: usage?.available_flex_credits,
-    },
-  ]
 
   return (
     <Dialog
@@ -169,16 +146,6 @@ export function DevinUsageDialog(props: DevinUsageDialogProps) {
               {usage?.pro ? (
                 <StatusBadge label='Pro' variant='info' copyable={false} />
               ) : null}
-              {usage?.can_use_cli ? (
-                <StatusBadge label='CLI' variant='success' copyable={false} />
-              ) : null}
-              {usage?.can_use_cascade ? (
-                <StatusBadge
-                  label='Cascade'
-                  variant='success'
-                  copyable={false}
-                />
-              ) : null}
               <StatusBadge
                 label={`HTTP ${props.response?.upstream_status ?? '-'}`}
                 variant='neutral'
@@ -205,30 +172,6 @@ export function DevinUsageDialog(props: DevinUsageDialogProps) {
                 </div>
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        <Card size='sm' className='gap-0 py-0'>
-          <CardHeader className='p-3 pb-2'>
-            <CardTitle className='text-sm font-semibold'>
-              {t('Credits')}
-            </CardTitle>
-            <CardDescription className='text-xs'>
-              {t('Used / Available')}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className='flex flex-col gap-2 p-3 pt-0'>
-            {creditRows.map((row) => (
-              <div
-                key={row.label}
-                className='bg-background ring-border/60 flex items-center justify-between gap-3 rounded-lg px-3 py-2 ring-1'
-              >
-                <span className='text-xs'>{row.label}</span>
-                <span className='shrink-0 text-xs font-semibold tabular-nums'>
-                  {formatCount(row.used)} / {formatCount(row.available)}
-                </span>
-              </div>
-            ))}
           </CardContent>
         </Card>
 

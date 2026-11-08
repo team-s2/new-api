@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 )
 
@@ -79,31 +80,48 @@ func MintDevinSessionToken(ctx context.Context, apiKey, baseURL, proxyURL string
 }
 
 // EnsureDevinChannelSessionToken re-mints the session token from the durable
-// api_key when the channel has one but no session token (or after upstream
-// auth failure invalidation). Returns the key JSON the relay should use.
+// api_key when the channel has one but no session token. Returns the key JSON
+// the relay should use; it does not detect token expiry.
 func EnsureDevinChannelSessionToken(ctx context.Context, channel *model.Channel) (string, error) {
+	return refreshDevinChannelSessionToken(ctx, channel, false)
+}
+
+// RefreshDevinChannelSessionToken mints a new session token even when the
+// observed credential already has one, without overwriting a concurrent refresh.
+func RefreshDevinChannelSessionToken(ctx context.Context, channel *model.Channel) (string, error) {
+	return refreshDevinChannelSessionToken(ctx, channel, true)
+}
+
+func refreshDevinChannelSessionToken(ctx context.Context, channel *model.Channel, force bool) (string, error) {
+	if channel.Type != constant.ChannelTypeDevinSub || channel.ChannelInfo.IsMultiKey {
+		return "", errors.New("devin subscription channel: requires a single-key Devin Subscription channel")
+	}
 	cred, err := ParseDevinCredential(channel.Key)
 	if err != nil {
 		return "", err
 	}
-	if cred.SessionToken != "" || cred.APIKey == "" {
+	if !force && (cred.SessionToken != "" || cred.APIKey == "") {
 		return channel.Key, nil
+	}
+	if strings.TrimSpace(cred.APIKey) == "" {
+		return "", errors.New("devin subscription channel: api_key is required to refresh credential")
 	}
 	token, err := MintDevinSessionToken(ctx, cred.APIKey, channel.GetBaseURL(), channel.GetSetting().Proxy)
 	if err != nil {
 		return "", err
 	}
-	cred.SessionToken = token
-	encoded, err := common.Marshal(cred)
-	if err != nil {
-		return "", err
-	}
 	updated, err := model.UpdateChannelCredential(ctx, channel.Id, func(current *model.Channel) (string, error) {
+		if current.Type != constant.ChannelTypeDevinSub || current.ChannelInfo.IsMultiKey {
+			return "", errors.New("devin subscription channel: requires a single-key Devin Subscription channel")
+		}
 		currentCred, parseErr := ParseDevinCredential(current.Key)
 		if parseErr != nil {
 			return "", parseErr
 		}
-		if currentCred.SessionToken != "" {
+		if currentCred.APIKey != cred.APIKey || current.GetBaseURL() != channel.GetBaseURL() || current.GetSetting().Proxy != channel.GetSetting().Proxy {
+			return "", errors.New("devin subscription channel: credential configuration changed during refresh; please retry")
+		}
+		if currentCred.SessionToken != "" && currentCred.SessionToken != cred.SessionToken {
 			// Another writer already refreshed it; keep theirs.
 			return current.Key, nil
 		}
@@ -118,8 +136,5 @@ func EnsureDevinChannelSessionToken(ctx context.Context, channel *model.Channel)
 	if err != nil {
 		return "", fmt.Errorf("devin subscription channel: persist session token: %w", err)
 	}
-	if updated != nil && updated.Key != "" {
-		return updated.Key, nil
-	}
-	return string(encoded), nil
+	return updated.Key, nil
 }
