@@ -138,6 +138,9 @@ func main() {
 	// Zhipu Coding Plan reset-card claiming, same cadence as the ZCode client.
 	service.StartZhipuResetOpportunityTask(qqbot.NotifyZhipuResetCards)
 
+	// Antigravity subscription credential auto-refresh.
+	service.StartAntigravityCredentialAutoRefreshTask()
+
 	// Subscription quota reset task (daily/weekly/monthly/custom)
 	service.StartSubscriptionQuotaResetTask()
 

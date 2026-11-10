@@ -703,6 +703,15 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	if channel.Type == constant.ChannelTypeAntigravitySub {
+		trimmedKey := strings.TrimSpace(channel.Key)
+		if isAdd || trimmedKey != "" {
+			if _, ok := service.ParseAntigravityOAuthKey(trimmedKey); !ok {
+				return fmt.Errorf("Antigravity Subscription key must be a valid JSON object containing access_token")
+			}
+		}
+	}
+
 	if channel.Type == constant.ChannelTypeZhipu_v4 && constant.IsZhipuCodingPlanBase(channel.GetBaseURL()) {
 		trimmedKey := strings.TrimSpace(channel.Key)
 		if strings.HasPrefix(trimmedKey, "{") {
@@ -1552,7 +1561,9 @@ func FetchModels(c *gin.Context) {
 			})
 			return
 		}
-		if req.Type != constant.ChannelTypeCodex && req.Type != constant.ChannelTypeGrokSub {
+		if req.Type != constant.ChannelTypeCodex &&
+			req.Type != constant.ChannelTypeGrokSub &&
+			req.Type != constant.ChannelTypeAntigravitySub {
 			key = strings.Split(key, "\n")[0]
 		}
 		channel = &model.Channel{

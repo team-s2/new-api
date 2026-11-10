@@ -70,6 +70,7 @@ const (
 	// 占用）再次冲突；持久化编号必须与前端保持一致。
 	ChannelTypeBigModelSub    = 100
 	ChannelTypeGrokSub        = 101
+	ChannelTypeAntigravitySub = 102
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -180,6 +181,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //99
 	"zcode-ultra",                               //100
 	"https://cli-chat-proxy.grok.com/v1",        //101
+	"https://daily-cloudcode-pa.googleapis.com", //102
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -252,6 +254,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeSGLang:         "SGLang",
 	ChannelTypeBigModelSub:    "BigModel Subscription (Coding Plan)",
 	ChannelTypeGrokSub:        "Grok Subscription",
+	ChannelTypeAntigravitySub: "Antigravity Subscription",
 }
 
 func GetChannelTypeName(channelType int) string {
