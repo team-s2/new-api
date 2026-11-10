@@ -145,7 +145,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 
 **后端**
 
-- `constant/channel.go`：`ChannelTypeDevinSub = 102`，默认 BaseURL `https://server.codeium.com`；`constant/api_type.go` / `common/api_type.go`：`APITypeDevinSub`；`relay/common/relay_info.go`：加入 `streamSupportedChannels`；`relay/relay_adaptor.go`：注册 `devinsub.Adaptor`。
+- `constant/channel.go`：`ChannelTypeDevinSub = 103`，默认 BaseURL `https://server.codeium.com`；`constant/api_type.go` / `common/api_type.go`：`APITypeDevinSub`；`relay/common/relay_info.go`：加入 `streamSupportedChannels`；`relay/relay_adaptor.go`：注册 `devinsub.Adaptor`。
 - `common/devin_models.go`：统一模型名单与裸名映射，供 relay 与模型发现复用。
 - `relay/channel/devinsub/wire.go`：Connect 帧编解码、chisel 元数据（732-hex 指纹）、`GetChatMessage` 请求构造（CASCADE、prompts/tools/tool_choice/trajectory_reference）、响应帧解析（text/thinking/tool_calls/usage/stop_reason）、trailer 错误解析、UTF-8 边界缓冲。
 - `relay/channel/devinsub/adaptor.go`：`DoRequest` 发 connect+proto 后用 `io.Pipe` reader 把帧流翻译成 OpenAI SSE（role/content/reasoning/tool_call/usage/finish/[DONE]），非流式聚合为 `chat.completion`；`DoResponse` 复用 OpenAI 处理器；会话亲和按 `prompt_cache_key` 否则 `(channel,model,user)` 派生 SHA1 UUID；UA 置空，`Sentry-Trace` 仅 chat 请求。
@@ -159,7 +159,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 
 **前端**（`web/src/features/channels/`）
 
-- `constants.ts`：`CHANNEL_TYPE_DEVIN_SUB = 102` + 名称/描述/排序；`api.ts`：OAuth login/exchange、`refreshDevinCredential`、`getDevinUsage`。
+- `constants.ts`：`CHANNEL_TYPE_DEVIN_SUB = 103` + 名称/描述/排序；`api.ts`：OAuth login/exchange、`refreshDevinCredential`、`getDevinUsage`。
 - `dialogs/devin-oauth-login-dialog.tsx`：两步 OAuth（打开授权页 → 粘贴 code/回调 URL → 回填 key）+ `DevinOAuthControls`（含个人使用免责声明）。
 - `dialogs/devin-usage-dialog.tsx`：plan/账户徽章、SWE-2 模型目录卡、Raw JSON；不展示未验证的 credits/can_use 字段。
 - `channel-mutate-drawer.tsx`：OAuth 控件 + 编辑态手动刷新按钮；`channels-columns.tsx`：余额列点击弹 usage（`isAccountInfoChannel` 纳入 Devin）。
