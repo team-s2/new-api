@@ -336,6 +336,28 @@ type RecordConsumeLogParams struct {
 	Other            *LogOther         `json:"other"`
 }
 
+// logCacheUsage is the cache part of a consume log's `other` field.
+type logCacheUsage struct {
+	UsageSemantic    string `json:"usage_semantic"`
+	CacheTokens      int    `json:"cache_tokens"`
+	CacheWriteTokens int    `json:"cache_write_tokens"`
+}
+
+// anthropicCacheUsageMarker matches the serialized `other` of logs whose cache
+// tokens are reported apart from prompt_tokens.
+const anthropicCacheUsageMarker = `%"usage_semantic":"anthropic"%`
+
+// separateCacheTokens returns the cache tokens that prompt_tokens does not
+// already include. OpenAI-style usage (Chat Completions, Responses) counts
+// cached input inside prompt_tokens; Anthropic usage reports cache reads and
+// writes apart from it, so only that semantic adds them to the token total.
+func (u logCacheUsage) separateCacheTokens() int {
+	if u.UsageSemantic != "anthropic" {
+		return 0
+	}
+	return max(0, u.CacheTokens) + max(0, u.CacheWriteTokens)
+}
+
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
 	if !common.LogConsumeEnabled {
 		return
@@ -386,12 +408,13 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		logger.LogError(c, common.LogText("failed to record log: %s", err.Error()))
 	}
 	if common.DataExportEnabled {
-		var cacheReadTokens, cacheCreationTokens int
+		var cache logCacheUsage
 		if other != nil {
-			cacheReadTokens, _ = other.public["cache_tokens"].(int)
+			cache.UsageSemantic, _ = other.public["usage_semantic"].(string)
+			cache.CacheTokens, _ = other.public["cache_tokens"].(int)
 			// The settlement path already normalizes the cache creation total.
 			// Do not add the 5m/1h breakdown again or infer tokens from prices.
-			cacheCreationTokens, _ = other.public["cache_write_tokens"].(int)
+			cache.CacheWriteTokens, _ = other.public["cache_write_tokens"].(int)
 		}
 		LogQuotaData(QuotaDataLogParams{
 			UserID:              userId,
@@ -399,9 +422,9 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			ModelName:           params.ModelName,
 			Quota:               params.Quota,
 			CreatedAt:           createdAt,
-			TokenUsed:           params.PromptTokens + params.CompletionTokens,
-			CacheReadTokens:     int64(cacheReadTokens),
-			CacheCreationTokens: int64(cacheCreationTokens),
+			TokenUsed:           params.PromptTokens + params.CompletionTokens + cache.separateCacheTokens(),
+			CacheReadTokens:     int64(cache.CacheTokens),
+			CacheCreationTokens: int64(cache.CacheWriteTokens),
 			UseGroup:            params.Group,
 			TokenID:             params.TokenId,
 			ChannelID:           params.ChannelId,
@@ -690,7 +713,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
 	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm")
+	rpmTpmQuery := LOG_DB.Table("logs")
 
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
 		return stat, err
@@ -727,7 +750,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	rpmTpmQuery = rpmTpmQuery.Where("type = ?", LogTypeConsume)
 
 	// 只统计最近60秒的rpm和tpm
-	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix())
+	rpmTpmQuery = rpmTpmQuery.Where("created_at >= ?", time.Now().Add(-60*time.Second).Unix()).Session(&gorm.Session{})
 
 	// 执行查询
 	if err := tx.Scan(&stat).Error; err != nil {
@@ -738,9 +761,20 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		Rpm int
 		Tpm int
 	}
-	if err := rpmTpmQuery.Scan(&rateStat).Error; err != nil {
+	err = rpmTpmQuery.Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm").Scan(&rateStat).Error
+	var cacheOthers []string
+	if err == nil {
+		err = rpmTpmQuery.Where("other LIKE ?", anthropicCacheUsageMarker).Pluck("other", &cacheOthers).Error
+	}
+	if err != nil {
 		common.SysError(common.LogText("failed to query rpm/tpm stat: %s", err.Error()))
 		return stat, common.NewMessage("Failed to query statistics")
+	}
+	for _, other := range cacheOthers {
+		var cache logCacheUsage
+		if common.UnmarshalJsonStr(other, &cache) == nil {
+			rateStat.Tpm += cache.separateCacheTokens()
+		}
 	}
 	stat.Rpm = rateStat.Rpm
 	stat.Tpm = rateStat.Tpm

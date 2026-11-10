@@ -94,7 +94,6 @@ func getRootFlowQuotaData(startTime int64, endTime int64, username string) ([]*F
 	return rows, fillFlowChannelNames(rows)
 }
 
-
 // flowUsesDirectLogs reports whether the window is short enough to aggregate
 // the per-request logs directly. quota_data rows are truncated to whole
 // hours, so a sub-hour window either matches no bucket (empty result) or
@@ -125,13 +124,8 @@ func flowLogsBaseQuery(startTime int64, endTime int64) *gorm.DB {
 }
 
 func getSelfFlowQuotaDataFromLogs(startTime int64, endTime int64, userID int) ([]*FlowQuotaData, error) {
-	rows := make([]*FlowQuotaData, 0)
-	err := flowLogsBaseQuery(startTime, endTime).
-		Select("token_id, " + logGroupCol + " as use_group, model_name, count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used").
-		Where("user_id = ?", userID).
-		Group("token_id, " + logGroupCol + ", model_name").
-		Order("quota DESC").
-		Find(&rows).Error
+	query := flowLogsBaseQuery(startTime, endTime).Where("user_id = ?", userID)
+	rows, err := sumFlowLogs(query, "token_id, "+logGroupCol+" as use_group, model_name", "token_id, "+logGroupCol+", model_name")
 	if err != nil {
 		return nil, err
 	}
@@ -139,16 +133,11 @@ func getSelfFlowQuotaDataFromLogs(startTime int64, endTime int64, userID int) ([
 }
 
 func getAdminFlowQuotaDataFromLogs(startTime int64, endTime int64, username string) ([]*FlowQuotaData, error) {
-	rows := make([]*FlowQuotaData, 0)
-	query := flowLogsBaseQuery(startTime, endTime).
-		Select("user_id, username, " + logGroupCol + " as use_group, model_name, channel_id, count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used")
+	query := flowLogsBaseQuery(startTime, endTime)
 	if username != "" {
 		query = query.Where("username = ?", username)
 	}
-	err := query.
-		Group("user_id, username, " + logGroupCol + ", model_name, channel_id").
-		Order("quota DESC").
-		Find(&rows).Error
+	rows, err := sumFlowLogs(query, "user_id, username, "+logGroupCol+" as use_group, model_name, channel_id", "user_id, username, "+logGroupCol+", model_name, channel_id")
 	if err != nil {
 		return nil, err
 	}
@@ -156,16 +145,11 @@ func getAdminFlowQuotaDataFromLogs(startTime int64, endTime int64, username stri
 }
 
 func getRootFlowQuotaDataFromLogs(startTime int64, endTime int64, username string) ([]*FlowQuotaData, error) {
-	rows := make([]*FlowQuotaData, 0)
-	query := flowLogsBaseQuery(startTime, endTime).
-		Select("user_id, username, token_id, " + logGroupCol + " as use_group, model_name, channel_id, count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used")
+	query := flowLogsBaseQuery(startTime, endTime)
 	if username != "" {
 		query = query.Where("username = ?", username)
 	}
-	err := query.
-		Group("user_id, username, token_id, " + logGroupCol + ", model_name, channel_id").
-		Order("quota DESC").
-		Find(&rows).Error
+	rows, err := sumFlowLogs(query, "user_id, username, token_id, "+logGroupCol+" as use_group, model_name, channel_id", "user_id, username, token_id, "+logGroupCol+", model_name, channel_id")
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +157,57 @@ func getRootFlowQuotaDataFromLogs(startTime int64, endTime int64, username strin
 		return rows, err
 	}
 	return rows, fillFlowChannelNames(rows)
+}
+
+// dimensionKey identifies a flow row by the dimensions it is grouped on;
+// dimensions a query does not select stay zero and match each other.
+func (row *FlowQuotaData) dimensionKey() string {
+	return fmt.Sprintf("%d\x00%s\x00%d\x00%s\x00%s\x00%d", row.UserID, row.Username, row.TokenID, row.UseGroup, row.ModelName, row.ChannelID)
+}
+
+// sumFlowLogs aggregates consume logs into flow rows. token_used counts input,
+// cache and output tokens: the cache tokens that Anthropic usage reports apart
+// from prompt_tokens are read from `other` and added to their rows.
+func sumFlowLogs(query *gorm.DB, dimensions string, groupBy string) ([]*FlowQuotaData, error) {
+	query = query.Session(&gorm.Session{})
+	rows := make([]*FlowQuotaData, 0)
+	err := query.
+		Select(dimensions + ", count(*) as count, sum(quota) as quota, sum(prompt_tokens + completion_tokens) as token_used").
+		Group(groupBy).
+		Order("quota DESC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+
+	var cacheLogs []struct {
+		FlowQuotaData `gorm:"embedded"`
+		Other         string `gorm:"column:other"`
+	}
+	err = query.
+		Select(dimensions+", other").
+		Where("other LIKE ?", anthropicCacheUsageMarker).
+		Find(&cacheLogs).Error
+	if err != nil {
+		return nil, err
+	}
+	if len(cacheLogs) == 0 {
+		return rows, nil
+	}
+	byKey := make(map[string]*FlowQuotaData, len(rows))
+	for _, row := range rows {
+		byKey[row.dimensionKey()] = row
+	}
+	for i := range cacheLogs {
+		var cache logCacheUsage
+		if common.UnmarshalJsonStr(cacheLogs[i].Other, &cache) != nil {
+			continue
+		}
+		if row := byKey[cacheLogs[i].dimensionKey()]; row != nil {
+			row.TokenUsed += cache.separateCacheTokens()
+		}
+	}
+	return rows, nil
 }
 
 func fillFlowTokenNames(rows []*FlowQuotaData) error {
