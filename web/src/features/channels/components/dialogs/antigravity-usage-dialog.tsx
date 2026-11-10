@@ -204,13 +204,14 @@ export function AntigravityUsageDialog({
         </>
       }
     >
-      {usageQuery.isLoading ? (
+      {usageQuery.isLoading && (
         <div className='space-y-3 py-2'>
           <Skeleton className='h-20 w-full rounded-lg' />
           <Skeleton className='h-28 w-full rounded-lg' />
           <Skeleton className='h-28 w-full rounded-lg' />
         </div>
-      ) : usageQuery.isError ? (
+      )}
+      {usageQuery.isError && (
         <ErrorState
           className='min-h-0 p-4'
           title={t('Failed to fetch Antigravity subscription usage')}
@@ -222,7 +223,8 @@ export function AntigravityUsageDialog({
             void usageQuery.refetch()
           }}
         />
-      ) : usage ? (
+      )}
+      {!usageQuery.isError && usage && (
         <div className='space-y-4 py-1'>
           <div className='flex flex-wrap items-center gap-2 rounded-lg border p-3.5 text-xs'>
             {tierLabel && (
@@ -257,9 +259,9 @@ export function AntigravityUsageDialog({
                 {t('Available Credits')}
               </div>
               <div className='grid gap-2 sm:grid-cols-2'>
-                {usage.credits.map((c, idx) => (
+                {usage.credits.map((c) => (
                   <div
-                    key={`${c.credit_type}-${idx}`}
+                    key={`${c.credit_type}-${c.credit_amount}`}
                     className='bg-muted/30 flex items-center justify-between rounded-md px-3 py-2 text-xs'
                   >
                     <span className='text-muted-foreground'>
@@ -293,7 +295,7 @@ export function AntigravityUsageDialog({
             </div>
           )}
         </div>
-      ) : null}
+      )}
     </Dialog>
   )
 }
