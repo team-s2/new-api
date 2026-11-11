@@ -866,6 +866,41 @@ export async function getDevinUsage(
 }
 
 // ============================================================================
+// OpenCode Go Subscription
+// ============================================================================
+
+export interface OpenCodeGoUsageWindow {
+  status: 'ok' | 'rate-limited'
+  percent: number
+  resets_at: string
+}
+
+export interface OpenCodeGoUsage {
+  rolling: OpenCodeGoUsageWindow
+  weekly: OpenCodeGoUsageWindow
+  monthly: OpenCodeGoUsageWindow
+  fetched_at?: string
+}
+
+export interface OpenCodeGoUsageResponse {
+  success: boolean
+  message?: string
+  message_key?: string
+  upstream_status?: number
+  data?: OpenCodeGoUsage
+}
+
+export async function getOpenCodeGoUsage(
+  channelId: number
+): Promise<OpenCodeGoUsageResponse> {
+  const res = await api.get(
+    `/api/channel/${channelId}/opencode-go/usage`,
+    channelActionConfig({ disableDuplicate: true })
+  )
+  return res.data
+}
+
+// ============================================================================
 // Multi-Key Management
 // ============================================================================
 

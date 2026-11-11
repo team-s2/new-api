@@ -64,10 +64,12 @@ import {
   getCodexUsage,
   getDevinUsage,
   getGrokUsage,
+  getOpenCodeGoUsage,
   getZhipuCodingPlanUsage,
   updateChannelBalance,
   type DevinUsageResponse,
   type GrokUsageResponse,
+  type OpenCodeGoUsageResponse,
   type ZhipuCodingPlanUsageResponse,
 } from '../api'
 import {
@@ -78,6 +80,7 @@ import {
   CHANNEL_TYPE_DEVIN_SUB,
   CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_ANTIGRAVITY_SUB,
+  CHANNEL_TYPE_OPENCODE_GO_SUB,
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
 import {
@@ -114,6 +117,7 @@ import {
 } from './dialogs/codex-usage-dialog'
 import { DevinUsageDialog } from './dialogs/devin-usage-dialog'
 import { GrokUsageDialog } from './dialogs/grok-usage-dialog'
+import { OpenCodeGoUsageDialog } from './dialogs/opencode-go-usage-dialog'
 import { ZhipuCodingPlanUsageDialog } from './dialogs/zhipu-coding-plan-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
@@ -380,6 +384,9 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const [devinUsageOpen, setDevinUsageOpen] = useState(false)
   const [devinUsageResponse, setDevinUsageResponse] =
     useState<DevinUsageResponse | null>(null)
+  const [openCodeGoUsageOpen, setOpenCodeGoUsageOpen] = useState(false)
+  const [openCodeGoUsageResponse, setOpenCodeGoUsageResponse] =
+    useState<OpenCodeGoUsageResponse | null>(null)
   const isZhipuCodingPlanChannel = isZhipuCodingPlan(
     channel.type,
     channel.base_url
@@ -387,12 +394,14 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const isGrokSub = channel.type === CHANNEL_TYPE_GROK_SUB
   const isAntigravitySub = channel.type === CHANNEL_TYPE_ANTIGRAVITY_SUB
   const isDevinSub = channel.type === CHANNEL_TYPE_DEVIN_SUB
+  const isOpenCodeGoSub = channel.type === CHANNEL_TYPE_OPENCODE_GO_SUB
   const isAccountInfoChannel =
     channel.type === 57 ||
     isZhipuCodingPlanChannel ||
     isGrokSub ||
     isAntigravitySub ||
-    isDevinSub
+    isDevinSub ||
+    isOpenCodeGoSub
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -563,6 +572,22 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       return
     }
 
+    if (isOpenCodeGoSub) {
+      try {
+        const res = await getOpenCodeGoUsage(channel.id)
+        if (!res.success) {
+          throw createServerError(res, t('Failed to fetch usage'))
+        }
+        setOpenCodeGoUsageResponse(res)
+        setOpenCodeGoUsageOpen(true)
+      } catch (error) {
+        handleServerError(error, t('Failed to fetch usage'))
+      } finally {
+        setIsUpdating(false)
+      }
+      return
+    }
+
     try {
       const response = await updateChannelBalance(channel.id)
       if (response.success && response.balance !== undefined) {
@@ -611,6 +636,8 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = t('Click to view Antigravity subscription usage')
   } else if (isDevinSub) {
     remainingTooltipLabel = t('Click to view Devin subscription usage')
+  } else if (isOpenCodeGoSub) {
+    remainingTooltipLabel = t('Click to view OpenCode Go subscription usage')
   } else if (isInferenceChannel) {
     remainingTooltipLabel = inferenceStatusLabel
   }
@@ -757,6 +784,33 @@ export function BalanceCell({ channel }: { channel: Channel }) {
               throw createServerError(res, t('Failed to fetch usage'))
             }
             setDevinUsageResponse(res)
+          } catch (error) {
+            handleServerError(error, t('Failed to fetch usage'))
+          } finally {
+            setIsUpdating(false)
+          }
+        }}
+        isRefreshing={isUpdating}
+      />
+      <OpenCodeGoUsageDialog
+        open={openCodeGoUsageOpen}
+        onOpenChange={setOpenCodeGoUsageOpen}
+        channelName={channel.name}
+        channelId={channel.id}
+        channelDisplayName={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        channelDisplayId={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        response={openCodeGoUsageResponse}
+        onRefresh={async () => {
+          if (isUpdating) {
+            return
+          }
+          setIsUpdating(true)
+          try {
+            const res = await getOpenCodeGoUsage(channel.id)
+            if (!res.success) {
+              throw createServerError(res, t('Failed to fetch usage'))
+            }
+            setOpenCodeGoUsageResponse(res)
           } catch (error) {
             handleServerError(error, t('Failed to fetch usage'))
           } finally {

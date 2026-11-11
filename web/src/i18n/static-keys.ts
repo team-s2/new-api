@@ -54,6 +54,13 @@ export const STATIC_I18N_KEYS = [
   'Devin channel configuration changed during refresh. Please retry',
   'Channel type is not Devin Subscription',
   'Multi-key channels are not supported',
+  // OpenCode Go channel console messages returned by the backend.
+  'Channel type is not OpenCode Go Subscription',
+  'Failed to fetch OpenCode Go usage',
+  'OpenCode Go rejected the credential; check the API key and subscription',
+  'OpenCode Go is rate limiting; try again later',
+  'OpenCode Go is temporarily unavailable; try again later',
+  'Failed to reach OpenCode Go; check the network and proxy settings',
   'For this channel, map the model name in client requests to the model name sent upstream.',
   // Zhipu Coding Plan usage window quota bases, sent by the backend as limit.unit.
   'credits',
@@ -126,6 +133,9 @@ export const STATIC_I18N_KEYS = [
   'Access Gemini and Claude models through Google Cloud Code Assist (Antigravity) subscription',
   'Use Antigravity OAuth Login to get credentials',
   'Default: https://daily-cloudcode-pa.googleapis.com',
+  'OpenCode Go Subscription',
+  'Access OpenCode Go subscription models through the OpenCode Go gateway',
+  'Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential',
 
   'Price per image',
   'Per image',

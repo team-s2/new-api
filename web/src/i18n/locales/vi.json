@@ -7557,6 +7557,26 @@
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Thông tin xác thực Zhipu Coding Plan phải có api_key, account_username và account_password",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "5-hour window": "Cửa sổ 5 giờ",
+    "Calendar month": "Tháng dương lịch",
+    "Calendar week": "Tuần dương lịch",
+    "Click to view OpenCode Go subscription usage": "Nhấp để xem mức sử dụng gói đăng ký OpenCode Go",
+    "Fetched at": "Thời điểm lấy",
+    "Monthly window": "Cửa sổ hàng tháng",
+    "OpenCode Go Subscription": "Gói đăng ký OpenCode Go",
+    "OpenCode Go Subscription Usage": "Mức sử dụng gói đăng ký OpenCode Go",
+    "Rate limited": "Bị giới hạn tốc độ",
+    "Resets at:": "Đặt lại lúc:",
+    "Rolling quota": "Hạn mức luân chuyển",
+    "Weekly window": "Cửa sổ hàng tuần",
+    "Access OpenCode Go subscription models through the OpenCode Go gateway": "Truy cập các mô hình của gói đăng ký OpenCode Go qua cổng OpenCode Go",
+    "Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential": "Nhập khóa API OpenCode Go từ OpenCode Console (oc_sk_…); khóa được gửi dưới dạng thông tin xác thực Bearer",
+    "Channel type is not OpenCode Go Subscription": "Loại kênh không phải là gói đăng ký OpenCode Go",
+    "Failed to fetch OpenCode Go usage": "Không thể lấy mức sử dụng OpenCode Go",
+    "OpenCode Go rejected the credential; check the API key and subscription": "OpenCode Go đã từ chối thông tin xác thực; hãy kiểm tra khóa API và gói đăng ký",
+    "OpenCode Go is rate limiting; try again later": "OpenCode Go đang giới hạn tốc độ; hãy thử lại sau",
+    "OpenCode Go is temporarily unavailable; try again later": "OpenCode Go tạm thời không khả dụng; hãy thử lại sau",
+    "Failed to reach OpenCode Go; check the network and proxy settings": "Không thể kết nối tới OpenCode Go; hãy kiểm tra mạng và proxy"
   }
 }

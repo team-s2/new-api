@@ -15,9 +15,9 @@ import (
 // drawn where it falls in time with dark = used and light = remaining; an
 // orange line marks now, and used quota past it is ahead of pace and turns red.
 // Reset cards get a third, narrow date axis at the end of the row, one thin
-// lane per card type; Grok, which has none, shows its monthly dollar allowance
-// there instead. Channels whose upstream query failed keep their row: their
-// windows are blanked and the error is printed across the row.
+// lane per card type; rows without reset cards (Grok, OpenCode Go) show their
+// monthly allowance there instead. Channels whose upstream query failed keep
+// their row: their windows are blanked and the error is printed across the row.
 
 const (
 	dayLength  = 86400.0
@@ -673,7 +673,7 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 			drawValueCell(p, fiveValue, cy, row.FiveHour, now)
 			drawWindowBar(p, row.Weekly, cy, weekScale, now, week, weekPale)
 			drawWindowBar(p, row.FiveHour, cy, fiveScale, now, five, fivePale)
-			if row.Provider != ProviderGrok {
+			if row.Monthly == nil {
 				drawCardCell(p, cy, row, cardScale, now)
 			}
 		}
@@ -695,7 +695,7 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 			blankRowCells(p, x0, y, rowsBottom)
 			issue := p.fit(row.Issue, right-x0-12, 13, Regular)
 			p.text(x0+12, y+rowHeight/2, issue, 13, over, Regular, alignLeft)
-		} else if row.Provider == ProviderGrok {
+		} else if row.Monthly != nil {
 			blankRowCells(p, cardLabel-6, y, rowsBottom)
 			drawMonthlyCell(p, y+rowHeight/2, row, now)
 		}

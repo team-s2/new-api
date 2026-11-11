@@ -460,6 +460,23 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return service.FetchDevinChannelModels(channel)
 	}
 
+	if channel.Type == constant.ChannelTypeOpenCodeGoSub {
+		key, _, apiErr := channel.GetNextEnabledKey()
+		if apiErr != nil {
+			return nil, fmt.Errorf("failed to get channel key: %w", apiErr)
+		}
+		key = strings.TrimSpace(key)
+		client, err := service.GetHttpClientWithProxy(channel.GetSetting().Proxy)
+		if err != nil {
+			return nil, err
+		}
+		models, err := service.FetchOpenCodeGoChannelModels(context.Background(), client, baseURL, key)
+		if err != nil {
+			return nil, sanitizeFetchModelsError(err, key)
+		}
+		return normalizeModelNames(models), nil
+	}
+
 	url := getUpstreamModelsURL(channel.Type, baseURL)
 
 	key, _, apiErr := channel.GetNextEnabledKey()

@@ -46,6 +46,8 @@ export const CHANNEL_TYPE_ANTIGRAVITY_SUB = 102
 
 export const CHANNEL_TYPE_DEVIN_SUB = 103
 
+export const CHANNEL_TYPE_OPENCODE_GO_SUB = 104
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -111,6 +113,7 @@ export const CHANNEL_TYPES = {
   [CHANNEL_TYPE_GROK_SUB]: 'Grok Subscription',
   [CHANNEL_TYPE_ANTIGRAVITY_SUB]: 'Antigravity Subscription',
   [CHANNEL_TYPE_DEVIN_SUB]: 'Devin Subscription',
+  [CHANNEL_TYPE_OPENCODE_GO_SUB]: 'OpenCode Go Subscription',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -210,6 +213,10 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
     descriptionKey:
       'Access Gemini and Claude models through Google Cloud Code Assist (Antigravity) subscription',
   },
+  [CHANNEL_TYPE_OPENCODE_GO_SUB]: {
+    descriptionKey:
+      'Access OpenCode Go subscription models through the OpenCode Go gateway',
+  },
 } satisfies Record<
   Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
   ChannelProviderPresentation
@@ -218,7 +225,7 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
   4, 62, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 100,
-  101, 102, 103, 22, 21, 44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
+  101, 102, 103, 104, 22, 21, 44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
 ]
 
 export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
@@ -557,6 +564,7 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_ANTIGRAVITY_SUB,
   CHANNEL_TYPE_DEVIN_SUB,
+  CHANNEL_TYPE_OPENCODE_GO_SUB,
 ])
 
 export const FIELD_PASSTHROUGH_TYPES = new Set([
@@ -608,6 +616,8 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
     'Use OAuth login to obtain the Grok subscription credential JSON (access_token / refresh_token)',
   [CHANNEL_TYPE_ANTIGRAVITY_SUB]:
     'Use Antigravity OAuth Login to get credentials',
+  [CHANNEL_TYPE_OPENCODE_GO_SUB]:
+    'Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

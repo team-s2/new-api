@@ -22,9 +22,10 @@ const (
 	maxTimestamp     = 253402214400.0 // year 9999; the renderer must not see more
 	upstreamParallel = 4
 
-	kindCodex = "codex"
-	kindZhipu = "zhipu"
-	kindGrok  = "grok"
+	kindCodex      = "codex"
+	kindZhipu      = "zhipu"
+	kindGrok       = "grok"
+	kindOpenCodeGo = "opencode-go"
 )
 
 func (c channel) accountKind() string {
@@ -39,6 +40,8 @@ func (c channel) accountKind() string {
 		return kindZhipu
 	case c.Type == constant.ChannelTypeGrokSub:
 		return kindGrok
+	case c.Type == constant.ChannelTypeOpenCodeGoSub:
+		return kindOpenCodeGo
 	}
 	return ""
 }
@@ -310,6 +313,43 @@ func grokWindow(raw map[string]any, duration float64, percentKey string) *render
 	return &render.QuotaWindow{UsedPercent: number(raw[percentKey]), Duration: duration, ResetAt: reset, Detail: detail}
 }
 
+// openCodeGoWindow maps one usage window ({status, percent, resets_at}) onto a
+// render window. Percent is already the used fraction.
+func openCodeGoWindow(raw map[string]any, duration float64) *render.QuotaWindow {
+	if len(raw) == 0 {
+		return nil
+	}
+	used := number(raw["percent"])
+	return &render.QuotaWindow{
+		UsedPercent: used,
+		Duration:    duration,
+		ResetAt:     resetTimestamp(raw["resets_at"], false),
+	}
+}
+
+func normalizeOpenCodeGo(row render.QuotaRow, usage map[string]any, usageErr error) render.QuotaRow {
+	if usageErr != nil {
+		row.Issue = issueText(usageErr)
+		return row
+	}
+	rolling := objectField(usage, "rolling")
+	weekly := objectField(usage, "weekly")
+	monthly := objectField(usage, "monthly")
+	row.FiveHour = openCodeGoWindow(rolling, fiveHourSeconds)
+	row.Weekly = openCodeGoWindow(weekly, weekSeconds)
+	row.Monthly = openCodeGoWindow(monthly, monthSeconds)
+	for _, window := range []map[string]any{rolling, weekly, monthly} {
+		if textField(window, "status") == "rate-limited" {
+			row.LimitNote = "上游当前限流"
+			break
+		}
+	}
+	if row.FiveHour == nil && row.Weekly == nil && row.Monthly == nil {
+		row.Issue = "上游未返回额度窗口"
+	}
+	return row
+}
+
 func normalizeGrok(row render.QuotaRow, usage map[string]any, usageErr error) render.QuotaRow {
 	if usageErr != nil {
 		row.Issue = issueText(usageErr)
@@ -437,6 +477,9 @@ func normalizeQuota(item channel, usage map[string]any, usageErr error, credits 
 	case kindGrok:
 		row.Provider = render.ProviderGrok
 		return normalizeGrok(row, usage, usageErr)
+	case kindOpenCodeGo:
+		row.Provider = "OpenCode Go"
+		return normalizeOpenCodeGo(row, usage, usageErr)
 	default:
 		row.Provider = fmt.Sprintf("类型 %d", item.Type)
 		row.Unsupported = true
@@ -504,6 +547,8 @@ func collectQuotas(ctx context.Context, client *apiClient, includeDisabled bool,
 				usage, usageErr = fetch(item.ID, "zhipu/coding-plan/usage")
 			case kindGrok:
 				usage, usageErr = fetch(item.ID, "grok/usage")
+			case kindOpenCodeGo:
+				usage, usageErr = fetch(item.ID, "opencode-go/usage")
 			}
 			row := normalizeQuota(item, usage, usageErr, credits, creditsErr, float64(time.Now().Unix()))
 			mu.Lock()

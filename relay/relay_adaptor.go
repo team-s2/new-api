@@ -33,6 +33,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/newapi"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
+	"github.com/QuantumNous/new-api/relay/channel/opencodego"
 	"github.com/QuantumNous/new-api/relay/channel/palm"
 	"github.com/QuantumNous/new-api/relay/channel/perplexity"
 	"github.com/QuantumNous/new-api/relay/channel/replicate"
@@ -132,6 +133,8 @@ func GetAdaptor(apiType int) channel.Adaptor {
 		return &antigravity.Adaptor{}
 	case constant.APITypeDevinSub:
 		return &devinsub.Adaptor{}
+	case constant.APITypeOpenCodeGoSub:
+		return &opencodego.Adaptor{}
 	}
 	return nil
 }

@@ -7557,6 +7557,26 @@
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Учётные данные Zhipu Coding Plan должны включать api_key, account_username и account_password",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "5-hour window": "5-часовое окно",
+    "Calendar month": "Календарный месяц",
+    "Calendar week": "Календарная неделя",
+    "Click to view OpenCode Go subscription usage": "Нажмите, чтобы просмотреть использование подписки OpenCode Go",
+    "Fetched at": "Получено",
+    "Monthly window": "Месячное окно",
+    "OpenCode Go Subscription": "Подписка OpenCode Go",
+    "OpenCode Go Subscription Usage": "Использование подписки OpenCode Go",
+    "Rate limited": "Ограничено по частоте",
+    "Resets at:": "Сброс:",
+    "Rolling quota": "Скользящая квота",
+    "Weekly window": "Недельное окно",
+    "Access OpenCode Go subscription models through the OpenCode Go gateway": "Доступ к моделям подписки OpenCode Go через шлюз OpenCode Go",
+    "Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential": "Введите ключ API OpenCode Go из консоли OpenCode (oc_sk_…); он отправляется как Bearer-учётные данные",
+    "Channel type is not OpenCode Go Subscription": "Тип канала не является подпиской OpenCode Go",
+    "Failed to fetch OpenCode Go usage": "Не удалось получить использование OpenCode Go",
+    "OpenCode Go rejected the credential; check the API key and subscription": "OpenCode Go отклонил учётные данные; проверьте ключ API и подписку",
+    "OpenCode Go is rate limiting; try again later": "OpenCode Go ограничивает частоту запросов; попробуйте позже",
+    "OpenCode Go is temporarily unavailable; try again later": "OpenCode Go временно недоступен; попробуйте позже",
+    "Failed to reach OpenCode Go; check the network and proxy settings": "Не удалось подключиться к OpenCode Go; проверьте сеть и прокси"
   }
 }

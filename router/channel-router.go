@@ -100,6 +100,7 @@ var channelPermissionRoutes = []permissionRoute{
 	{method: http.MethodPost, path: "/antigravity/oauth/exchange", permission: authz.ChannelSensitiveWrite, handler: controller.ExchangeAntigravityOAuthCode},
 	{method: http.MethodPost, path: "/:id/antigravity/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshAntigravityChannelCredential},
 	{method: http.MethodGet, path: "/:id/antigravity/usage", permission: authz.ChannelRead, handler: controller.GetAntigravityChannelUsage},
+	{method: http.MethodGet, path: "/:id/opencode-go/usage", permission: authz.ChannelRead, handler: controller.GetOpenCodeGoChannelUsage},
 	{method: http.MethodPost, path: "/devin/oauth/login", permission: authz.ChannelSensitiveWrite, handler: controller.StartDevinOAuthLogin},
 	{method: http.MethodPost, path: "/devin/oauth/exchange", permission: authz.ChannelSensitiveWrite, handler: controller.ExchangeDevinOAuthCode},
 	{method: http.MethodPost, path: "/:id/devin/refresh", permission: authz.ChannelSensitiveWrite, handler: controller.RefreshDevinChannelCredential},

@@ -7557,6 +7557,26 @@
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Les identifiants Zhipu Coding Plan doivent inclure api_key, account_username et account_password",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "5-hour window": "Fenêtre de 5 heures",
+    "Calendar month": "Mois civil",
+    "Calendar week": "Semaine civile",
+    "Click to view OpenCode Go subscription usage": "Cliquez pour afficher l’utilisation de l’abonnement OpenCode Go",
+    "Fetched at": "Récupéré à",
+    "Monthly window": "Fenêtre mensuelle",
+    "OpenCode Go Subscription": "Abonnement OpenCode Go",
+    "OpenCode Go Subscription Usage": "Utilisation de l’abonnement OpenCode Go",
+    "Rate limited": "Débit limité",
+    "Resets at:": "Réinitialisation :",
+    "Rolling quota": "Quota glissant",
+    "Weekly window": "Fenêtre hebdomadaire",
+    "Access OpenCode Go subscription models through the OpenCode Go gateway": "Accéder aux modèles de l’abonnement OpenCode Go via la passerelle OpenCode Go",
+    "Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential": "Saisissez la clé API OpenCode Go de la console OpenCode (oc_sk_…) ; elle est envoyée comme identifiant Bearer",
+    "Channel type is not OpenCode Go Subscription": "Le type de canal n’est pas un abonnement OpenCode Go",
+    "Failed to fetch OpenCode Go usage": "Échec de la récupération de l’utilisation OpenCode Go",
+    "OpenCode Go rejected the credential; check the API key and subscription": "OpenCode Go a rejeté les identifiants ; vérifiez la clé API et l’abonnement",
+    "OpenCode Go is rate limiting; try again later": "OpenCode Go limite le débit ; réessayez plus tard",
+    "OpenCode Go is temporarily unavailable; try again later": "OpenCode Go est temporairement indisponible ; réessayez plus tard",
+    "Failed to reach OpenCode Go; check the network and proxy settings": "Impossible de joindre OpenCode Go ; vérifiez le réseau et le proxy"
   }
 }

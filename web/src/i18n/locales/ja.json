@@ -7557,6 +7557,26 @@
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "Zhipu Coding Plan の認証情報には api_key、account_username、account_password が必要です",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "5-hour window": "5 時間ウィンドウ",
+    "Calendar month": "暦月",
+    "Calendar week": "暦週",
+    "Click to view OpenCode Go subscription usage": "クリックして OpenCode Go サブスクリプションの使用量を表示",
+    "Fetched at": "取得日時",
+    "Monthly window": "月次ウィンドウ",
+    "OpenCode Go Subscription": "OpenCode Go サブスクリプション",
+    "OpenCode Go Subscription Usage": "OpenCode Go サブスクリプションの使用量",
+    "Rate limited": "レート制限中",
+    "Resets at:": "リセット日時:",
+    "Rolling quota": "ローリングクォータ",
+    "Weekly window": "週次ウィンドウ",
+    "Access OpenCode Go subscription models through the OpenCode Go gateway": "OpenCode Go ゲートウェイ経由で OpenCode Go サブスクリプションのモデルにアクセス",
+    "Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential": "OpenCode コンソールの OpenCode Go API キー（oc_sk_…）を入力します。Bearer 認証情報として送信されます",
+    "Channel type is not OpenCode Go Subscription": "チャネルタイプが OpenCode Go サブスクリプションではありません",
+    "Failed to fetch OpenCode Go usage": "OpenCode Go の使用量を取得できませんでした",
+    "OpenCode Go rejected the credential; check the API key and subscription": "OpenCode Go が認証情報を拒否しました。API キーとサブスクリプションを確認してください",
+    "OpenCode Go is rate limiting; try again later": "OpenCode Go がレート制限中です。しばらくしてから再試行してください",
+    "OpenCode Go is temporarily unavailable; try again later": "OpenCode Go は一時的に利用できません。しばらくしてから再試行してください",
+    "Failed to reach OpenCode Go; check the network and proxy settings": "OpenCode Go に接続できません。ネットワークとプロキシ設定を確認してください"
   }
 }

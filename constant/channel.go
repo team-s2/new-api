@@ -72,6 +72,7 @@ const (
 	ChannelTypeGrokSub        = 101
 	ChannelTypeAntigravitySub = 102
 	ChannelTypeDevinSub       = 103
+	ChannelTypeOpenCodeGoSub  = 104
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -144,46 +145,47 @@ var ChannelBaseURLs = []string{
 	"",                                          //62
 	"",                                          //63
 	// 64-99 预留给上游未来新增的渠道类型；BigModel Coding Plan 固定使用 100。
-	"",                                          //64
-	"",                                          //65
-	"",                                          //66
-	"",                                          //67
-	"",                                          //68
-	"",                                          //69
-	"",                                          //70
-	"",                                          //71
-	"",                                          //72
-	"",                                          //73
-	"",                                          //74
-	"",                                          //75
-	"",                                          //76
-	"",                                          //77
-	"",                                          //78
-	"",                                          //79
-	"",                                          //80
-	"",                                          //81
-	"",                                          //82
-	"",                                          //83
-	"",                                          //84
-	"",                                          //85
-	"",                                          //86
-	"",                                          //87
-	"",                                          //88
-	"",                                          //89
-	"",                                          //90
-	"",                                          //91
-	"",                                          //92
-	"",                                          //93
-	"",                                          //94
-	"",                                          //95
-	"",                                          //96
-	"",                                          //97
-	"",                                          //98
-	"",                                          //99
-	"zcode-ultra",                               //100
-	"https://cli-chat-proxy.grok.com/v1",        //101
+	"",                                   //64
+	"",                                   //65
+	"",                                   //66
+	"",                                   //67
+	"",                                   //68
+	"",                                   //69
+	"",                                   //70
+	"",                                   //71
+	"",                                   //72
+	"",                                   //73
+	"",                                   //74
+	"",                                   //75
+	"",                                   //76
+	"",                                   //77
+	"",                                   //78
+	"",                                   //79
+	"",                                   //80
+	"",                                   //81
+	"",                                   //82
+	"",                                   //83
+	"",                                   //84
+	"",                                   //85
+	"",                                   //86
+	"",                                   //87
+	"",                                   //88
+	"",                                   //89
+	"",                                   //90
+	"",                                   //91
+	"",                                   //92
+	"",                                   //93
+	"",                                   //94
+	"",                                   //95
+	"",                                   //96
+	"",                                   //97
+	"",                                   //98
+	"",                                   //99
+	"zcode-ultra",                        //100
+	"https://cli-chat-proxy.grok.com/v1", //101
 	"https://daily-cloudcode-pa.googleapis.com", //102
 	"https://server.codeium.com",                //103
+	"https://opencode.ai/inference/go",          //104
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -258,6 +260,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeGrokSub:        "Grok Subscription",
 	ChannelTypeAntigravitySub: "Antigravity Subscription",
 	ChannelTypeDevinSub:       "Devin Subscription",
+	ChannelTypeOpenCodeGoSub:  "OpenCode Go Subscription",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -365,4 +368,18 @@ const ZcodeTrialPlanUserAgent = "ZCode/" + ZcodeClientVersion
 func IsZcodeTrialPlanBase(baseURL string) bool {
 	trimmed := strings.TrimSpace(baseURL)
 	return trimmed == ZcodeTrialPlanPreset || strings.Contains(trimmed, "/zcode-plan/")
+}
+
+// NormalizeOpenCodeGoBaseURL returns the gateway prefix used by the OpenCode Go
+// channel. The official gateway moved from /zen/go/v1 to /inference/go; the
+// discovery (/v1/...) and inference (/openai/v1/..., /anthropic/v1/...,
+// /google/v1beta/...) paths are appended to the prefix, so a copied /v1 suffix
+// from the old address is removed. Custom gateways keep their own prefix.
+func NormalizeOpenCodeGoBaseURL(raw string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(raw), "/")
+	switch trimmed {
+	case "", "https://opencode.ai/inference/go/v1", "https://opencode.ai/zen/go/v1":
+		return "https://opencode.ai/inference/go"
+	}
+	return trimmed
 }

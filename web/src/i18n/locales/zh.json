@@ -7557,6 +7557,26 @@
     "Zhipu Coding Plan credential must include api_key, account_username, and account_password": "智谱 Coding Plan 凭据必须包含 api_key、account_username 和 account_password",
     "Zhipu GLM": "智谱GLM",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "5-hour window": "5 小时窗口",
+    "Calendar month": "自然月",
+    "Calendar week": "自然周",
+    "Click to view OpenCode Go subscription usage": "点击查看 OpenCode Go 订阅用量",
+    "Fetched at": "获取时间",
+    "Monthly window": "每月窗口",
+    "OpenCode Go Subscription": "OpenCode Go 订阅",
+    "OpenCode Go Subscription Usage": "OpenCode Go 订阅用量",
+    "Rate limited": "已限流",
+    "Resets at:": "重置时间：",
+    "Rolling quota": "滚动配额",
+    "Weekly window": "每周窗口",
+    "Access OpenCode Go subscription models through the OpenCode Go gateway": "通过 OpenCode Go 网关访问 OpenCode Go 订阅模型",
+    "Enter the OpenCode Go API key from the OpenCode Console (oc_sk_…); it is sent as a Bearer credential": "填写 OpenCode 控制台中的 OpenCode Go API Key（oc_sk_…），将以 Bearer 凭据发送",
+    "Channel type is not OpenCode Go Subscription": "渠道类型不是 OpenCode Go 订阅",
+    "Failed to fetch OpenCode Go usage": "获取 OpenCode Go 用量失败",
+    "OpenCode Go rejected the credential; check the API key and subscription": "OpenCode Go 拒绝了凭据，请检查 API Key 与订阅状态",
+    "OpenCode Go is rate limiting; try again later": "OpenCode Go 正在限流，请稍后重试",
+    "OpenCode Go is temporarily unavailable; try again later": "OpenCode Go 暂时不可用，请稍后重试",
+    "Failed to reach OpenCode Go; check the network and proxy settings": "无法连接 OpenCode Go，请检查网络与代理设置"
   }
 }

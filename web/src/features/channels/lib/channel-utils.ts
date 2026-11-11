@@ -23,6 +23,7 @@ import {
   CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_ANTIGRAVITY_SUB,
+  CHANNEL_TYPE_OPENCODE_GO_SUB,
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPES,
   MULTI_KEY_STATUS_CONFIG,
@@ -125,6 +126,7 @@ export function getChannelTypeIcon(type: number): string {
     43: 'DeepSeek', // DeepSeek
     48: 'XAI', // xAI
     [CHANNEL_TYPE_GROK_SUB]: 'XAI', // Grok Subscription
+    [CHANNEL_TYPE_OPENCODE_GO_SUB]: 'OpenAI', // OpenCode Go Subscription
     49: 'Coze', // Coze
     40: 'SiliconCloud', // SiliconFlow
     44: 'OpenAI', // MokaAI
