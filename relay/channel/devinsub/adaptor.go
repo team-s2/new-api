@@ -34,7 +34,7 @@ type devinUpstreamRequest struct {
 	Tools       []devinTool      `json:"tools,omitempty"`
 	ToolChoice  *devinToolChoice `json:"tool_choice,omitempty"`
 	Temperature *float64         `json:"temperature,omitempty"`
-	MaxTokens   int              `json:"max_tokens,omitempty"`
+	MaxTokens   *uint            `json:"max_tokens,omitempty"`
 	SessionID   string           `json:"session_id,omitempty"`
 	CascadeID   string           `json:"cascade_id,omitempty"`
 }
@@ -147,21 +147,22 @@ func openAIRequestToDevin(c *gin.Context, request *dto.GeneralOpenAIRequest, inf
 		return nil, err
 	}
 
-	maxTokens := int(request.GetMaxTokens())
+	maxTokens := request.MaxTokens
+	if request.MaxCompletionTokens != nil {
+		maxTokens = request.MaxCompletionTokens
+	}
 	var temperature *float64
 	if request.Temperature != nil {
 		v := *request.Temperature
 		temperature = &v
 	}
 
-	// Session affinity: pin cascade/session ids to the client cache key when
-	// provided so repeat turns share the upstream prompt cache.
+	// Only an explicit cache key opts into session affinity. Scope it to the
+	// tenant, channel and model so unrelated conversations cannot share state.
 	var sessionID, cascadeID string
 	cacheKey := strings.TrimSpace(request.PromptCacheKey)
-	if info != nil && cacheKey == "" {
-		cacheKey = fmt.Sprintf("%d|%s|%d", info.ChannelId, info.UpstreamModelName, info.UserId)
-	}
-	if cacheKey != "" {
+	if info != nil && cacheKey != "" {
+		cacheKey = fmt.Sprintf("%d|%d|%s|%s", info.UserId, info.ChannelId, info.UpstreamModelName, cacheKey)
 		sessionID = uuid.NewSHA1(uuid.NameSpaceURL, []byte("devin/"+cacheKey)).String()
 		cascadeID = sessionID
 	}
@@ -261,7 +262,11 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err != nil {
 		return nil, err
 	}
-	resp, err := client.Do(req)
+	// Metadata contains the credential as well as the Authorization header;
+	// never replay the request body to a redirect target.
+	requestClient := *client
+	requestClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := requestClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -297,14 +302,14 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 
 	if info.IsStream {
 		// Translate Connect frames into OpenAI chunk SSE on the fly.
-		resp.Body = streamDevinAsOpenAISSE(resp.Body, firstFlag, firstPayload, info.UpstreamModelName)
+		resp.Body = streamDevinAsOpenAISSE(resp.Body, firstFlag, firstPayload, info)
 		resp.Header.Set("Content-Type", "text/event-stream")
 		resp.Header.Del("Content-Length")
 		return resp, nil
 	}
 
 	// Non-stream: aggregate the full frame stream eagerly.
-	jsonBody, closeErr := aggregateDevinResponse(resp.Body, firstFlag, firstPayload, info.UpstreamModelName)
+	jsonBody, closeErr := aggregateDevinResponse(resp.Body, firstFlag, firstPayload, info)
 	resp.Body.Close()
 	if closeErr != nil {
 		return nil, closeErr
@@ -333,13 +338,47 @@ func (a *Adaptor) GetChannelName() string {
 	return ChannelName
 }
 
+// devinToolCalls retains the active call for continuation deltas that omit an
+// ID. An explicit ID always selects the active slot, including revisits to a
+// parallel call. ChatToolCall has no index field to use instead.
+type devinToolCalls struct {
+	calls  []dto.ToolCallResponse
+	byID   map[string]int
+	active int
+}
+
+func (calls *devinToolCalls) apply(delta devinToolCallDelta) (int, error) {
+	index := calls.active
+	if delta.ID != "" {
+		var found bool
+		index, found = calls.byID[delta.ID]
+		if !found {
+			index = len(calls.calls)
+			if calls.byID == nil {
+				calls.byID = make(map[string]int)
+			}
+			calls.byID[delta.ID] = index
+			calls.calls = append(calls.calls, dto.ToolCallResponse{ID: delta.ID, Type: "function"})
+		}
+		calls.active = index
+	} else if len(calls.calls) == 0 {
+		return 0, errors.New("devin upstream: tool-call continuation has no active call")
+	}
+	call := &calls.calls[index]
+	if delta.Name != "" {
+		call.Function.Name = delta.Name
+	}
+	call.Function.Arguments += delta.Arguments
+	return index, nil
+}
+
 // --- upstream frame stream -> OpenAI protocol translation ---
 
 // streamDevinAsOpenAISSE spawns a translator goroutine feeding an io.Pipe with
 // `data: {chat.completion.chunk}\n\n` lines terminated by `data: [DONE]`.
 // `firstFlag`/`firstPayload` carry the eagerly-peeked first frame (may be a
 // data frame or a clean end-stream).
-func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload []byte, model string) io.ReadCloser {
+func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload []byte, info *relaycommon.RelayInfo) io.ReadCloser {
 	pr, pw := io.Pipe()
 	go func() {
 		var writeErr error
@@ -354,8 +393,7 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 
 		chatID := "chatcmpl-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:24]
 		created := time.Now().Unix()
-		toolIndexByCall := make(map[string]int)
-		toolIndexCount := 0
+		var toolCalls devinToolCalls
 		sentRole := false
 		var contentBuf, thinkingBuf utf8SplitBuffer
 
@@ -376,7 +414,7 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 				Id:      chatID,
 				Object:  "chat.completion.chunk",
 				Created: created,
-				Model:   model,
+				Model:   info.UpstreamModelName,
 				Choices: []dto.ChatCompletionsStreamResponseChoice{{Index: 0}},
 			}
 		}
@@ -411,11 +449,16 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 				frame.Usage = nil
 			}
 			if frame.StopReason != 0 {
+				if _, err := devinFinishReason(frame.StopReason); err != nil {
+					upstreamErr = err
+					break
+				}
 				terminalFrame.StopReason = frame.StopReason
 				frame.StopReason = 0
 			}
-			if processDevinPayload(frame, newChunk, emit, emitDelta, &toolIndexByCall, &toolIndexCount, &sentRole, &contentBuf, &thinkingBuf) {
-				return
+			if err := processDevinPayload(frame, newChunk, emit, emitDelta, &toolCalls, &sentRole, &contentBuf, &thinkingBuf, info); err != nil {
+				upstreamErr = err
+				break
 			}
 			flag, payload, err = readConnectFrame(upstream)
 			if err != nil {
@@ -430,7 +473,7 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 			if terminalFrame.Usage != nil {
 				chunk := newChunk()
 				chunk.Choices = []dto.ChatCompletionsStreamResponseChoice{}
-				chunk.Usage = devinUsageToOpenAI(terminalFrame.Usage)
+				chunk.Usage = devinUsageToOpenAI(terminalFrame.Usage, info)
 				if !emit(chunk) {
 					return
 				}
@@ -450,7 +493,9 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 				return
 			}
 		}
-		if processDevinPayload(terminalFrame, newChunk, emit, emitDelta, &toolIndexByCall, &toolIndexCount, &sentRole, &contentBuf, &thinkingBuf) {
+		if err := processDevinPayload(terminalFrame, newChunk, emit, emitDelta, &toolCalls, &sentRole, &contentBuf, &thinkingBuf, info); err != nil {
+			writeErr = err
+			_ = emitUpstreamError(pw, err.Error())
 			return
 		}
 		if _, err := pw.Write([]byte("data: [DONE]\n\n")); err != nil {
@@ -460,42 +505,40 @@ func streamDevinAsOpenAISSE(upstream io.ReadCloser, firstFlag byte, firstPayload
 	return pr
 }
 
-// processDevinPayload handles one frame: returns true when the stream must
-// terminate because writing the converted chunk failed.
+// processDevinPayload emits one decoded frame, with finish before usage so the
+// shared OpenAI handler can apply the client's include_usage preference.
 func processDevinPayload(
 	frame devinFrameResult,
 	newChunk func() *dto.ChatCompletionsStreamResponse,
 	emit func(*dto.ChatCompletionsStreamResponse) bool,
 	emitDelta func(func(*dto.ChatCompletionsStreamResponseChoiceDelta)) bool,
-	toolIndexByCall *map[string]int,
-	toolIndexCount *int,
+	toolCalls *devinToolCalls,
 	sentRole *bool,
 	contentBuf, thinkingBuf *utf8SplitBuffer,
-) bool {
+	info *relaycommon.RelayInfo,
+) error {
 	if !*sentRole && (frame.ContentText != "" || frame.ThinkingText != "" || len(frame.ToolCallDeltas) > 0) {
 		*sentRole = true
 		if !emitDelta(func(d *dto.ChatCompletionsStreamResponseChoiceDelta) { d.Role = "assistant" }) {
-			return true
+			return io.ErrClosedPipe
 		}
 	}
 
 	if thinking := thinkingBuf.feed([]byte(frame.ThinkingText)); thinking != "" {
 		if !emitDelta(func(d *dto.ChatCompletionsStreamResponseChoiceDelta) { d.SetReasoningContent(thinking) }) {
-			return true
+			return io.ErrClosedPipe
 		}
 	}
 	if content := contentBuf.feed([]byte(frame.ContentText)); content != "" {
 		if !emitDelta(func(d *dto.ChatCompletionsStreamResponseChoiceDelta) { d.SetContentString(content) }) {
-			return true
+			return io.ErrClosedPipe
 		}
 	}
 
 	for _, tc := range frame.ToolCallDeltas {
-		idx, ok := (*toolIndexByCall)[tc.ID]
-		if !ok {
-			idx = *toolIndexCount
-			*toolIndexCount++
-			(*toolIndexByCall)[tc.ID] = idx
+		idx, err := toolCalls.apply(tc)
+		if err != nil {
+			return err
 		}
 		call := dto.ToolCallResponse{Index: &idx}
 		if tc.ID != "" {
@@ -507,31 +550,31 @@ func processDevinPayload(
 		if !emitDelta(func(d *dto.ChatCompletionsStreamResponseChoiceDelta) {
 			d.ToolCalls = []dto.ToolCallResponse{call}
 		}) {
-			return true
-		}
-	}
-
-	if frame.Usage != nil {
-		chunk := newChunk()
-		chunk.Choices = []dto.ChatCompletionsStreamResponseChoice{}
-		chunk.Usage = devinUsageToOpenAI(frame.Usage)
-		if !emit(chunk) {
-			return true
+			return io.ErrClosedPipe
 		}
 	}
 
 	if frame.StopReason != 0 {
-		finish := "stop"
-		if frame.StopReason == 10 {
-			finish = "tool_calls"
+		finish, err := devinFinishReason(frame.StopReason)
+		if err != nil {
+			return err
 		}
 		chunk := newChunk()
 		chunk.Choices[0].FinishReason = &finish
 		if !emit(chunk) {
-			return true
+			return io.ErrClosedPipe
 		}
 	}
-	return false
+	if frame.Usage != nil {
+		chunk := newChunk()
+		chunk.Choices = []dto.ChatCompletionsStreamResponseChoice{}
+		chunk.Usage = devinUsageToOpenAI(frame.Usage, info)
+		if !emit(chunk) {
+			return io.ErrClosedPipe
+		}
+	}
+
+	return nil
 }
 
 // emitUpstreamError writes an OpenAI-shaped error object as the last SSE line.
@@ -553,31 +596,38 @@ func emitUpstreamError(w io.Writer, message string) error {
 	return nil
 }
 
-func devinUsageToOpenAI(u *devinUsage) *dto.Usage {
+func devinUsageToOpenAI(u *devinUsage, info *relaycommon.RelayInfo) *dto.Usage {
 	if u == nil {
 		return nil
 	}
-	promptTokens := u.PromptTokens + u.CachedTokens + u.CacheWriteTokens
-	usage := &dto.Usage{
-		PromptTokens:     int(promptTokens),
-		CompletionTokens: int(u.CompletionTokens),
-		TotalTokens:      int(promptTokens + u.CompletionTokens),
+	promptTokens, promptClamp := common.QuotaFromFloatChecked(float64(u.PromptTokens) + float64(u.CachedTokens) + float64(u.CacheWriteTokens))
+	totalTokens, totalClamp := common.QuotaFromFloatChecked(float64(promptTokens) + float64(u.CompletionTokens))
+	if info != nil && info.QuotaClamp == nil {
+		for _, clamp := range []*common.QuotaClamp{u.QuotaClamp, promptClamp, totalClamp} {
+			if clamp != nil {
+				info.QuotaClamp = clamp
+				break
+			}
+		}
 	}
-	usage.PromptTokensDetails.CachedTokens = int(u.CachedTokens)
-	usage.PromptTokensDetails.CacheWriteTokens = int(u.CacheWriteTokens)
+	usage := &dto.Usage{
+		PromptTokens:     promptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      totalTokens,
+	}
+	usage.PromptTokensDetails.CachedTokens = u.CachedTokens
+	usage.PromptTokensDetails.CacheWriteTokens = u.CacheWriteTokens
 	return usage
 }
 
 // aggregateDevinResponse drains the upstream frame stream into a single
 // OpenAI chat.completion JSON body. firstFlag/firstPayload are the
 // eagerly-peeked first frame. A valid Connect stream must end with a trailer.
-func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []byte, model string) ([]byte, error) {
+func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []byte, info *relaycommon.RelayInfo) ([]byte, error) {
 	var contentBuilder, thinkingBuilder strings.Builder
 	var contentBuf, thinkingBuf utf8SplitBuffer
 
-	toolCalls := map[int]*dto.ToolCallResponse{}
-	toolOrder := []int{}
-	toolIndexByCall := make(map[string]int)
+	var toolCalls devinToolCalls
 	finishReason := "stop"
 	var usage *dto.Usage
 
@@ -596,25 +646,18 @@ func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []b
 		contentBuilder.WriteString(contentBuf.feed([]byte(frame.ContentText)))
 
 		for _, tc := range frame.ToolCallDeltas {
-			idx, ok := toolIndexByCall[tc.ID]
-			if !ok {
-				idx = len(toolOrder)
-				toolOrder = append(toolOrder, idx)
-				toolIndexByCall[tc.ID] = idx
-				call := &dto.ToolCallResponse{ID: tc.ID, Type: "function"}
-				toolCalls[idx] = call
+			if _, err := toolCalls.apply(tc); err != nil {
+				return false, err
 			}
-			call := toolCalls[idx]
-			if tc.Name != "" {
-				call.Function.Name = tc.Name
-			}
-			call.Function.Arguments += tc.Arguments
 		}
 		if frame.Usage != nil {
-			usage = devinUsageToOpenAI(frame.Usage)
+			usage = devinUsageToOpenAI(frame.Usage, info)
 		}
-		if frame.StopReason == 10 {
-			finishReason = "tool_calls"
+		if frame.StopReason != 0 {
+			finishReason, err = devinFinishReason(frame.StopReason)
+			if err != nil {
+				return false, err
+			}
 		}
 		return false, nil
 	}
@@ -642,17 +685,13 @@ func aggregateDevinResponse(upstream io.Reader, firstFlag byte, firstPayload []b
 		reasoning := thinking
 		msg.ReasoningContent = &reasoning
 	}
-	if len(toolOrder) > 0 {
-		calls := make([]dto.ToolCallResponse, 0, len(toolOrder))
-		for _, idx := range toolOrder {
-			calls = append(calls, *toolCalls[idx])
-		}
-		msg.SetToolCalls(calls)
+	if len(toolCalls.calls) > 0 {
+		msg.SetToolCalls(toolCalls.calls)
 	}
 
 	response := dto.OpenAITextResponse{
 		Id:      "chatcmpl-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:24],
-		Model:   model,
+		Model:   info.UpstreamModelName,
 		Object:  "chat.completion",
 		Created: time.Now().Unix(),
 		Choices: []dto.OpenAITextResponseChoice{{

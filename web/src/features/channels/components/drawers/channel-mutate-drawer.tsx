@@ -4801,7 +4801,7 @@ export function ChannelMutateDrawer({
                     <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
                       <div className='text-muted-foreground text-xs'>
                         {t(
-                          'Devin session tokens are re-minted from a durable api_key when needed; you can also refresh manually.'
+                          'Devin session tokens are not refreshed automatically. Manual refresh requires an API key; OAuth-only credentials require signing in again.'
                         )}
                       </div>
                       <div className='flex flex-wrap items-center gap-2'>

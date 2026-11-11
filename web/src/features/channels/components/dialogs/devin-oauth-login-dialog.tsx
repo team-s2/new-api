@@ -123,7 +123,7 @@ export function DevinOAuthLoginDialog(props: DevinOAuthLoginDialogProps) {
           <Alert>
             <AlertDescription>
               {t(
-                'The Devin subscription credential JSON has been generated. If it contains a durable api_key, session tokens are re-minted automatically when needed.'
+                'The Devin subscription credential JSON has been generated. Apply it to the channel key field. If the session token expires, sign in again through OAuth.'
               )}
             </AlertDescription>
           </Alert>
@@ -210,7 +210,7 @@ export function DevinOAuthControls(props: {
       <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
         <div className='text-muted-foreground text-xs'>
           {t(
-            'Devin Subscription channels use an OAuth credential as the key. Use OAuth login to obtain it, or paste a JSON credential containing a cog_* api_key.'
+            'Devin Subscription channels accept a JSON credential containing session_token or api_key. Use OAuth login to obtain a session token.'
           )}
         </div>
         <Button

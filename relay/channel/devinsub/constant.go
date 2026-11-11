@@ -9,26 +9,7 @@ const (
 	// desktop CLI talks to.
 	DefaultBaseURL = "https://server.codeium.com"
 	// ChatRPCPath is the Connect-RPC endpoint for chat completions.
-	ChatRPCPath = "/exa.api_server_pb.ApiServerService/GetChatMessage"
-	// SelfDevinSessionTokenRPCPath mints a short-lived session token from a
-	// durable cog_* API key (best-effort self-healing path).
-	SelfDevinSessionTokenRPCPath = "/exa.seat_management_pb.SeatManagementService/GetSelfDevinSessionToken"
-	// UserStatusRPCPath returns plan/quota information.
-	UserStatusRPCPath = "/exa.seat_management_pb.SeatManagementService/GetUserStatus"
-	// CliModelConfigsRPCPath returns the account-scoped model catalog.
-	CliModelConfigsRPCPath = "/exa.api_server_pb.ApiServerService/GetCliModelConfigs"
-
-	// DefaultAPIBaseURL hosts the OAuth token exchange and profile APIs.
-	DefaultAPIBaseURL = "https://api.devin.ai"
-	TokenPath         = "/auth/cli/token"
-	SelfPath          = "/v3/self"
-
-	// ClientName/ClientVersion mirror the devin-cli metadata fingerprint
-	// declared in GetChatMessageRequest field 1.
-	ClientName           = "chisel"
-	ClientVersion        = "3000.10.21"
-	fingerprintHexLength = 732
-
+	ChatRPCPath      = "/exa.api_server_pb.ApiServerService/GetChatMessage"
 	defaultMaxTokens = 128000
 )
 

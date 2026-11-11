@@ -125,20 +125,24 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var streamFunctionCallNames []string
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
-		var errorResponse dto.SimpleResponse
-		if err := common.UnmarshalJsonStr(data, &errorResponse); err == nil {
-			if oaiError := errorResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
-				upstreamFailure = types.WithOpenAIError(*oaiError, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+		if info.ChannelType == constant.ChannelTypeDevinSub && strings.Contains(data, `"error"`) {
+			var errorResponse dto.SimpleResponse
+			if err := common.UnmarshalJsonStr(data, &errorResponse); err == nil {
+				if oaiError := errorResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+					upstreamFailure = types.WithOpenAIError(*oaiError, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+				}
 			}
 		}
 		pendingData := lastStreamData
-		if upstreamFailure != nil && pendingData != "" && info.RelayFormat == types.RelayFormatClaude {
+		if upstreamFailure != nil && pendingData != "" {
 			// Keep the pending usage for settlement, but do not convert it or
 			// a finish reason into a successful terminal before the error.
 			var pendingChunk dto.ChatCompletionsStreamResponse
 			if err := common.UnmarshalJsonStr(pendingData, &pendingChunk); err == nil {
-				pendingChunk.Usage = nil
-				hasOutput := false
+				if info.RelayFormat == types.RelayFormatClaude || !info.ShouldIncludeUsage {
+					pendingChunk.Usage = nil
+				}
+				hasOutput := pendingChunk.Usage != nil
 				for i := range pendingChunk.Choices {
 					pendingChunk.Choices[i].FinishReason = nil
 					delta := &pendingChunk.Choices[i].Delta

@@ -696,15 +696,6 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 		}
 	}
 
-	// Devin subscription channels with only a durable api_key mint a session
-	// token on demand. Best-effort: failures leave the key untouched and the
-	// api_key itself still authenticates upstream.
-	if channel.Type == constant.ChannelTypeDevinSub && !channel.ChannelInfo.IsMultiKey {
-		if refreshedKey, err := service.EnsureDevinChannelSessionToken(c.Request.Context(), channel); err == nil && refreshedKey != "" {
-			common.SetContextKey(c, constant.ContextKeyChannelKey, refreshedKey)
-		}
-	}
-
 	common.SetContextKey(c, constant.ContextKeyChannelBaseUrl, channel.GetBaseURL())
 
 	common.SetContextKey(c, constant.ContextKeySystemPromptOverride, false)

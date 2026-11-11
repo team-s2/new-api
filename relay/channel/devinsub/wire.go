@@ -10,19 +10,18 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"math"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/devinwire"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -120,13 +119,14 @@ type devinPrompt struct {
 
 // devinUsage is token accounting from response field 7.
 type devinUsage struct {
-	PromptTokens     int64
-	CompletionTokens int64
-	CachedTokens     int64
-	CacheWriteTokens int64
+	PromptTokens     int
+	CompletionTokens int
+	CachedTokens     int
+	CacheWriteTokens int
 	StatusCode       uint64
 	RequestID        string
 	ModelName        string
+	QuotaClamp       *common.QuotaClamp
 }
 
 // devinFrameResult is the decoded content of a single response frame.
@@ -134,7 +134,7 @@ type devinFrameResult struct {
 	OutputID           string
 	Timestamp          uint64
 	ContentText        string
-	StopReason         uint64 // 2/4=stop, 10=tool_calls
+	StopReason         uint64 // upstream StopReason enum
 	ToolCallDeltas     []devinToolCallDelta
 	ThinkingText       string
 	DeltaSignature     []byte
@@ -143,20 +143,24 @@ type devinFrameResult struct {
 	Usage              *devinUsage
 }
 
-// generateDeviceFingerprint produces the mandatory 732-hex-char device
-// fingerprint (metadata field 1.31). Random per request, matching devin-cli.
-func generateDeviceFingerprint() string {
-	var b [fingerprintHexLength / 2]byte
-	if _, err := rand.Read(b[:]); err == nil {
-		return hex.EncodeToString(b[:])
+// devinFinishReason maps the upstream StopReason enum, extracted from the CLI
+// protobuf descriptors. Partial generations retain their truncation semantics;
+// failed generations must never become successful OpenAI stops.
+func devinFinishReason(reason uint64) (string, error) {
+	switch reason {
+	case 0, 2, 4, 6, 8, 12:
+		return "stop", nil
+	case 1, 3, 5, 9:
+		return "length", nil
+	case 10:
+		return "tool_calls", nil
+	case 11:
+		return "content_filter", nil
+	case 7, 13:
+		return "", fmt.Errorf("devin upstream: generation ended unsuccessfully (stop reason %d)", reason)
+	default:
+		return "", fmt.Errorf("devin upstream: unknown stop reason %d", reason)
 	}
-	seed := uuid.New().String()
-	var sb strings.Builder
-	for counter := 0; sb.Len() < fingerprintHexLength; counter++ {
-		h := sha256.Sum256([]byte(fmt.Sprintf("%s-%d", seed, counter)))
-		sb.WriteString(hex.EncodeToString(h[:]))
-	}
-	return sb.String()[:fingerprintHexLength]
 }
 
 // generateSentryTrace mirrors the devin-cli distributed tracing header:
@@ -253,28 +257,6 @@ func readConnectFrame(r io.Reader) (flag byte, payload []byte, err error) {
 	return flag, payload, nil
 }
 
-// buildClientMetadataBytes serializes request field 1 (ClientMetadata).
-func buildClientMetadataBytes(sessionToken string) []byte {
-	var f1Bytes []byte
-	f1Bytes = protowire.AppendTag(f1Bytes, 1, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, ClientName)
-	f1Bytes = protowire.AppendTag(f1Bytes, 2, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, ClientVersion)
-	f1Bytes = protowire.AppendTag(f1Bytes, 3, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, sessionToken)
-	f1Bytes = protowire.AppendTag(f1Bytes, 4, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, "en")
-	f1Bytes = protowire.AppendTag(f1Bytes, 5, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, runtime.GOOS)
-	f1Bytes = protowire.AppendTag(f1Bytes, 7, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, ClientVersion)
-	f1Bytes = protowire.AppendTag(f1Bytes, 12, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, ClientName)
-	f1Bytes = protowire.AppendTag(f1Bytes, 31, protowire.BytesType)
-	f1Bytes = protowire.AppendString(f1Bytes, generateDeviceFingerprint())
-	return f1Bytes
-}
-
 // buildGetChatMessageRequest encodes a full GetChatMessageRequest payload.
 func buildGetChatMessageRequest(
 	sessionToken string,
@@ -284,15 +266,19 @@ func buildGetChatMessageRequest(
 	tools []devinTool,
 	toolChoice *devinToolChoice,
 	temperature *float64,
-	maxTokens int,
+	maxTokens *uint,
 	sessionID string,
 	cascadeID string,
 ) []byte {
-	if maxTokens <= 0 {
-		maxTokens = defaultMaxTokens
+	outputLimit := uint(defaultMaxTokens)
+	if maxTokens != nil {
+		outputLimit = *maxTokens
 	}
+	turnIndex := 0
 	if sessionID == "" {
 		sessionID = uuid.New().String()
+	} else {
+		turnIndex = nextSessionTurnIndex(sessionID)
 	}
 	if cascadeID == "" {
 		cascadeID = sessionID
@@ -305,7 +291,7 @@ func buildGetChatMessageRequest(
 	reqBytes := make([]byte, 0, estimatedSize)
 
 	// Field 1: client metadata.
-	f1Bytes := buildClientMetadataBytes(sessionToken)
+	f1Bytes := devinwire.Metadata(sessionToken)
 	reqBytes = protowire.AppendTag(reqBytes, 1, protowire.BytesType)
 	reqBytes = protowire.AppendBytes(reqBytes, f1Bytes)
 
@@ -395,7 +381,7 @@ func buildGetChatMessageRequest(
 	f8Bytes = protowire.AppendTag(f8Bytes, 1, protowire.VarintType)
 	f8Bytes = protowire.AppendVarint(f8Bytes, 1)
 	f8Bytes = protowire.AppendTag(f8Bytes, 2, protowire.VarintType)
-	f8Bytes = protowire.AppendVarint(f8Bytes, uint64(maxTokens))
+	f8Bytes = protowire.AppendVarint(f8Bytes, uint64(outputLimit))
 	f8Bytes = protowire.AppendTag(f8Bytes, 3, protowire.VarintType)
 	f8Bytes = protowire.AppendVarint(f8Bytes, 400)
 	tempVal := 1.0
@@ -446,7 +432,6 @@ func buildGetChatMessageRequest(
 	}
 
 	// Field 15: thread session metadata.
-	turnIndex := nextSessionTurnIndex(sessionID)
 	var f15Bytes []byte
 	f15Bytes = protowire.AppendTag(f15Bytes, 1, protowire.BytesType)
 	f15Bytes = protowire.AppendString(f15Bytes, sessionID)
@@ -535,11 +520,17 @@ func parseDevinFrame(payload []byte) (devinFrameResult, error) {
 			case 3:
 				textParts = append(textParts, string(val))
 			case 6:
-				if tc, err := parseDevinToolCallDelta(val); err == nil {
-					res.ToolCallDeltas = append(res.ToolCallDeltas, tc)
+				tc, err := parseDevinToolCallDelta(val)
+				if err != nil {
+					return res, fmt.Errorf("invalid Devin tool call: %w", err)
 				}
+				res.ToolCallDeltas = append(res.ToolCallDeltas, tc)
 			case 7:
-				res.Usage = parseDevinUsageField(val)
+				var err error
+				res.Usage, err = parseDevinUsageField(val)
+				if err != nil {
+					return res, fmt.Errorf("invalid Devin usage: %w", err)
+				}
 			case 9:
 				thinkingParts = append(thinkingParts, string(val))
 			case 10:
@@ -609,6 +600,9 @@ func parseDevinToolCallDelta(data []byte) (devinToolCallDelta, error) {
 			pos += nSkip
 		}
 	}
+	if tc.InvalidJSONStr != "" || tc.InvalidJSONErr != "" {
+		return tc, fmt.Errorf("upstream returned invalid tool-call arguments")
+	}
 	return tc, nil
 }
 
@@ -646,13 +640,13 @@ func parseDevinHeaderField(data []byte) (string, string) {
 	return key, val
 }
 
-func parseDevinUsageField(data []byte) *devinUsage {
+func parseDevinUsageField(data []byte) (*devinUsage, error) {
 	u := &devinUsage{}
 	pos := 0
 	for pos < len(data) {
 		num, typ, n := protowire.ConsumeTag(data[pos:])
 		if n <= 0 {
-			break
+			return nil, protowire.ParseError(n)
 		}
 		pos += n
 
@@ -660,25 +654,40 @@ func parseDevinUsageField(data []byte) *devinUsage {
 		case protowire.VarintType:
 			v, vn := protowire.ConsumeVarint(data[pos:])
 			if vn <= 0 {
-				return u
+				return nil, protowire.ParseError(vn)
 			}
 			pos += vn
+			var tokenCount *int
+			var accumulated bool
 			switch num {
 			case 2: // uncached input tokens
-				u.PromptTokens += int64(v)
+				tokenCount, accumulated = &u.PromptTokens, true
 			case 3: // output tokens
-				u.CompletionTokens = int64(v)
+				tokenCount = &u.CompletionTokens
 			case 4: // cache write tokens
-				u.CacheWriteTokens += int64(v)
+				tokenCount, accumulated = &u.CacheWriteTokens, true
 			case 5: // cache read tokens
-				u.CachedTokens = int64(v)
+				tokenCount = &u.CachedTokens
 			case 6: // status code
 				u.StatusCode = v
+			}
+			if tokenCount != nil {
+				// Never cast an untrusted uint64 to a signed token count. Bound
+				// every field and repeated-field sum before it reaches billing.
+				value := float64(v)
+				if accumulated {
+					value += float64(*tokenCount)
+				}
+				count, clamp := common.QuotaFromFloatChecked(value)
+				*tokenCount = count
+				if u.QuotaClamp == nil {
+					u.QuotaClamp = clamp
+				}
 			}
 		case protowire.BytesType:
 			val, bn := protowire.ConsumeBytes(data[pos:])
 			if bn <= 0 {
-				return u
+				return nil, protowire.ParseError(bn)
 			}
 			pos += bn
 			switch num {
@@ -697,12 +706,12 @@ func parseDevinUsageField(data []byte) *devinUsage {
 		default:
 			nSkip := protowire.ConsumeFieldValue(num, typ, data[pos:])
 			if nSkip <= 0 {
-				return u
+				return nil, protowire.ParseError(nSkip)
 			}
 			pos += nSkip
 		}
 	}
-	return u
+	return u, nil
 }
 
 func isPrintableASCII(b []byte) bool {
@@ -778,67 +787,6 @@ func parseDevinTrailerError(payload []byte) (statusCode int, err error) {
 		}
 	}
 	return httpCode, fmt.Errorf("devin upstream error (%s): %s", trailer.Error.Code, trailer.Error.Message)
-}
-
-// decodeWireFields generically decodes a protobuf message into a
-// field-number → values map. Used by the usage/model-catalog probes whose
-// schemas are large and version-tolerant; callers interpret what they need.
-func decodeWireFields(data []byte) map[int][][]byte {
-	out := make(map[int][][]byte)
-	pos := 0
-	for pos < len(data) {
-		num, typ, n := protowire.ConsumeTag(data[pos:])
-		if n <= 0 {
-			break
-		}
-		pos += n
-		switch typ {
-		case protowire.BytesType:
-			val, bn := protowire.ConsumeBytes(data[pos:])
-			if bn <= 0 {
-				return out
-			}
-			pos += bn
-			cp := make([]byte, len(val))
-			copy(cp, val)
-			out[int(num)] = append(out[int(num)], cp)
-		default:
-			var buf [binary.MaxVarintLen64]byte
-			var raw []byte
-			switch typ {
-			case protowire.VarintType:
-				v, vn := protowire.ConsumeVarint(data[pos:])
-				if vn <= 0 {
-					return out
-				}
-				raw = protowire.AppendVarint(buf[:0], v)
-				pos += vn
-			case protowire.Fixed32Type:
-				v, vn := protowire.ConsumeFixed32(data[pos:])
-				if vn <= 0 {
-					return out
-				}
-				raw = protowire.AppendFixed32(buf[:0], v)
-				pos += vn
-			case protowire.Fixed64Type:
-				v, vn := protowire.ConsumeFixed64(data[pos:])
-				if vn <= 0 {
-					return out
-				}
-				raw = protowire.AppendFixed64(buf[:0], v)
-				pos += vn
-			default:
-				nSkip := protowire.ConsumeFieldValue(num, typ, data[pos:])
-				if nSkip <= 0 {
-					return out
-				}
-				pos += nSkip
-				continue
-			}
-			out[int(num)] = append(out[int(num)], raw)
-		}
-	}
-	return out
 }
 
 // utf8SplitBuffer buffers incomplete UTF-8 sequences across chunk boundaries.

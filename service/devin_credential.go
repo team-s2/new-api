@@ -14,7 +14,7 @@ import (
 
 // DevinCredential is the JSON stored in a Devin Subscription channel key.
 // `session_token` is minted by the PKCE OAuth flow; `api_key` is an optional
-// durable cog_* key that can mint fresh session tokens for self-healing.
+// durable cog_* key that can be used directly or manually mint a session token.
 type DevinCredential struct {
 	SessionToken string `json:"session_token,omitempty"`
 	APIKey       string `json:"api_key,omitempty"`
@@ -24,26 +24,28 @@ type DevinCredential struct {
 	CreatedAt    string `json:"created_at,omitempty"`
 }
 
-// AccessToken returns the bearer token used for upstream calls: the durable
-// api_key when present (the upstream accepts cog_* keys directly), otherwise
-// the OAuth session token.
+// AccessToken prefers the explicitly acquired session token, so OAuth login
+// and manual refresh affect subsequent calls. API-key-only credentials use
+// the durable key directly without an automatic mint on the relay path.
 func (c *DevinCredential) AccessToken() string {
-	if c.APIKey != "" {
-		return c.APIKey
+	if c.SessionToken != "" {
+		return c.SessionToken
 	}
-	return c.SessionToken
+	return c.APIKey
 }
 
 func ParseDevinCredential(raw string) (*DevinCredential, error) {
 	if strings.TrimSpace(raw) == "" {
-		return nil, errors.New("devin subscription channel: empty credential")
+		return nil, common.NewMessage("Devin credential is empty")
 	}
 	var cred DevinCredential
 	if err := common.Unmarshal([]byte(raw), &cred); err != nil {
-		return nil, errors.New("devin subscription channel: invalid credential json")
+		return nil, common.NewMessage("Invalid Devin credential JSON")
 	}
+	cred.APIKey = strings.TrimSpace(cred.APIKey)
+	cred.SessionToken = strings.TrimSpace(cred.SessionToken)
 	if cred.AccessToken() == "" {
-		return nil, errors.New("devin subscription channel: credential needs session_token or api_key")
+		return nil, common.NewMessage("Devin credential requires a session token or API key")
 	}
 	return &cred, nil
 }
@@ -65,8 +67,10 @@ func NormalizeDevinSessionToken(token string) string {
 func MintDevinSessionToken(ctx context.Context, apiKey, baseURL, proxyURL string) (string, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		return "", errors.New("devin subscription channel: empty api_key")
+		return "", common.NewMessage("Devin credential requires an API key for manual refresh")
 	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	payload := buildDevinMetadataRequest(apiKey)
 	body, err := postDevinConnectRPC(ctx, devinSeatTokenRPCPath(baseURL), apiKey, proxyURL, payload)
 	if err != nil {
@@ -79,32 +83,18 @@ func MintDevinSessionToken(ctx context.Context, apiKey, baseURL, proxyURL string
 	return token, nil
 }
 
-// EnsureDevinChannelSessionToken re-mints the session token from the durable
-// api_key when the channel has one but no session token. Returns the key JSON
-// the relay should use; it does not detect token expiry.
-func EnsureDevinChannelSessionToken(ctx context.Context, channel *model.Channel) (string, error) {
-	return refreshDevinChannelSessionToken(ctx, channel, false)
-}
-
 // RefreshDevinChannelSessionToken mints a new session token even when the
 // observed credential already has one, without overwriting a concurrent refresh.
 func RefreshDevinChannelSessionToken(ctx context.Context, channel *model.Channel) (string, error) {
-	return refreshDevinChannelSessionToken(ctx, channel, true)
-}
-
-func refreshDevinChannelSessionToken(ctx context.Context, channel *model.Channel, force bool) (string, error) {
-	if channel.Type != constant.ChannelTypeDevinSub || channel.ChannelInfo.IsMultiKey {
-		return "", errors.New("devin subscription channel: requires a single-key Devin Subscription channel")
+	if channel == nil || channel.Type != constant.ChannelTypeDevinSub || channel.ChannelInfo.IsMultiKey {
+		return "", common.NewMessage("Only single-key Devin Subscription channels are supported")
 	}
 	cred, err := ParseDevinCredential(channel.Key)
 	if err != nil {
 		return "", err
 	}
-	if !force && (cred.SessionToken != "" || cred.APIKey == "") {
-		return channel.Key, nil
-	}
 	if strings.TrimSpace(cred.APIKey) == "" {
-		return "", errors.New("devin subscription channel: api_key is required to refresh credential")
+		return "", common.NewMessage("Devin credential requires an API key for manual refresh")
 	}
 	token, err := MintDevinSessionToken(ctx, cred.APIKey, channel.GetBaseURL(), channel.GetSetting().Proxy)
 	if err != nil {
@@ -112,22 +102,14 @@ func refreshDevinChannelSessionToken(ctx context.Context, channel *model.Channel
 	}
 	updated, err := model.UpdateChannelCredential(ctx, channel.Id, func(current *model.Channel) (string, error) {
 		if current.Type != constant.ChannelTypeDevinSub || current.ChannelInfo.IsMultiKey {
-			return "", errors.New("devin subscription channel: requires a single-key Devin Subscription channel")
+			return "", common.NewMessage("Only single-key Devin Subscription channels are supported")
 		}
-		currentCred, parseErr := ParseDevinCredential(current.Key)
-		if parseErr != nil {
-			return "", parseErr
+		if current.Key != channel.Key || current.GetBaseURL() != channel.GetBaseURL() || current.GetSetting().Proxy != channel.GetSetting().Proxy {
+			return "", common.NewMessage("Devin channel configuration changed during refresh. Please retry")
 		}
-		if currentCred.APIKey != cred.APIKey || current.GetBaseURL() != channel.GetBaseURL() || current.GetSetting().Proxy != channel.GetSetting().Proxy {
-			return "", errors.New("devin subscription channel: credential configuration changed during refresh; please retry")
-		}
-		if currentCred.SessionToken != "" && currentCred.SessionToken != cred.SessionToken {
-			// Another writer already refreshed it; keep theirs.
-			return current.Key, nil
-		}
-		currentCred.SessionToken = token
-		currentCred.CreatedAt = time.Now().Format(time.RFC3339)
-		merged, marshalErr := common.Marshal(currentCred)
+		cred.SessionToken = token
+		cred.CreatedAt = time.Now().Format(time.RFC3339)
+		merged, marshalErr := common.Marshal(cred)
 		if marshalErr != nil {
 			return "", marshalErr
 		}

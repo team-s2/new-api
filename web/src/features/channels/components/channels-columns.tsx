@@ -551,14 +551,12 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       try {
         const res = await getDevinUsage(channel.id)
         if (!res.success) {
-          throw new Error(res.message || t('Failed to fetch usage'))
+          throw createServerError(res, t('Failed to fetch usage'))
         }
         setDevinUsageResponse(res)
         setDevinUsageOpen(true)
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : t('Failed to fetch usage')
-        )
+        handleServerError(error, t('Failed to fetch usage'))
       } finally {
         setIsUpdating(false)
       }
@@ -756,7 +754,7 @@ export function BalanceCell({ channel }: { channel: Channel }) {
           try {
             const res = await getDevinUsage(channel.id)
             if (!res.success) {
-              throw new Error(res.message || t('Failed to fetch usage'))
+              throw createServerError(res, t('Failed to fetch usage'))
             }
             setDevinUsageResponse(res)
           } catch (error) {

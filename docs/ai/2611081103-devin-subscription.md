@@ -2,7 +2,7 @@
 
 调研结论先行：Devin Desktop/CLI 的模型流量走 Cognition（收购 Windsurf 后）的 Codeium 后端 `server.codeium.com`，协议为 Connect-RPC（protobuf 服务端流）。该面已被两个 MIT 开源项目完整逆向，接入可行；实现成本集中在 protowire 手写编解码层（有现成参照），其余可完全复用本仓库 Antigravity Subscription 已建立的渠道模板。本文档记录逆向事实、接入设计与风险，供实现 PR 参考。
 
-- 目标：新增 `Devin Subscription` 渠道类型，渠道 Key 为 Devin OAuth（PKCE）登录所得 session token（可叠加 `cog_*` durable key 做自愈），模型面仅暴露 `swe-2` 与 `swe-2-flash` 系列。
+- 目标：新增 `Devin Subscription` 渠道类型，渠道 Key 为 Devin OAuth（PKCE）登录所得 session token（可叠加 `cog_*` API key 做手动刷新），模型面仅暴露 `swe-2` 与 `swe-2-flash` 系列。
 - 场景定位：Pro（自助付费）账号自用；`swe-2`/`swe-2-flash` 当前对自助档处于促销免费窗口（见「免费口径」）。
 
 ## 参考实现
@@ -33,7 +33,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 2. 换取 token：`POST https://api.devin.ai/auth/cli/token`，JSON `{code, code_verifier}` → `{token}`（JWT 形态，前缀补 `devin-session-token$`）。
 3. 账户信息：`GET https://api.devin.ai/v3/self`，`Bearer <token>` → `{user_name, user_id, org_id}`。
 
-线上形态（两处同时携带）：`Authorization: Basic <session_token>-<session_token>`；`metadata.api_key = <session_token>`。session token 寿命由服务端管理，无 refresh_token；`cog_*` durable key（app.devin.ai → Settings → API keys 手工签发，撤销才失效）可经 `GetSelfDevinSessionToken` 现场铸新，是零维护兜底。
+线上形态（两处同时携带）：`Authorization: Basic <session_token>-<session_token>`；`metadata.api_key = <session_token>`。session token 寿命由服务端管理，无 refresh_token；`cog_*` API key 由 app.devin.ai 的 Settings → API keys 签发，可能受组织到期策略影响。手动 mint 的实现见 [`service/devin_credential.go`](../../service/devin_credential.go)，真实 `cog_*` 路径尚未验证。
 
 ### GetChatMessageRequest 关键字段（protowire 编码序号）
 
@@ -57,7 +57,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 | 字段 | 内容 |
 | --- | --- |
 | 3 `delta_text` | 文本增量 |
-| 5 `stop_reason` | 10=FUNCTION_CALL、2/3 等为常规终止 |
+| 5 `stop_reason` | 上游枚举见 [提取的 protobuf](https://github.com/WncFht/devin2api/blob/main/outputs/devin-proto/all-protos.proto)；OpenAI 映射见 [`devinFinishReason`](../../relay/channel/devinsub/wire.go)，长度限制与正常终止分别处理 |
 | 6 `delta_tool_calls` | 子消息 {1:id,2:name,3:arguments_json,4:invalid_json_str,5:invalid_json_err,6:is_custom} |
 | 7 `usage` | **权威用量**：input/output/cache_read/cache_write tokens + model_uid + billing_model_uid + response_header(x-request-id) |
 | 9/10/21 | `delta_thinking` / `delta_signature` / `signature_type`——思考签名可回放进下一轮历史（Claude `redacted_thinking`、Responses `encrypted_content` 等价物） |
@@ -90,24 +90,24 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 ```json
 {
   "session_token": "devin-session-token$…",
-  "api_key": "cog_…(可选，铸新兜底)",
+  "api_key": "cog_…(可选，手动刷新)",
   "user_name": "…", "user_id": "…", "org_id": "org-…",
   "plan": "pro", "created_at": "…"
 }
 ```
 
-刷新语义与 antigravity 不同：无 refresh_token。请求侧仅在 session token 缺失且存在 `api_key` 时惰性铸新；手动刷新会重新铸造已有 token。网络调用在行锁外执行，持久化前核对凭据和上游配置，避免覆盖并发修改。只有 OAuth session token 的渠道需重新登录。当前请求优先使用 `api_key`，不宣称自动检测 session token 到期。具体流程见 [`service/devin_credential.go`](../../service/devin_credential.go)。
+刷新语义与 Antigravity 不同：没有 refresh_token，也不在 relay 或 usage 路径自动 mint。请求优先使用 session token，缺少时直接使用 API key；这是本项目的双凭据选择策略。手动刷新需要 API key，成功写入的新 session token 会用于后续请求；失败保留原凭据。网络调用在行锁外执行，持久化前核对完整凭据、base URL 与 proxy，拒绝覆盖并发修改。只有 OAuth session token 的渠道到期后需重新登录。实现以 [`service/devin_credential.go`](../../service/devin_credential.go) 为准；不承诺自动检测 token 到期。
 
 ### 文件清单
 
 - `relay/channel/devinsub/adaptor.go`：内嵌 `openai.Adaptor`（OpenAI Chat/Responses 与 Claude Messages 经宿主桥接）；`GetRequestURL` → `{base}/exa.api_server_pb.ApiServerService/GetChatMessage`；`SetupRequestHeader` 设 Basic 认证、connect+proto、Sentry-Trace、suppress UA；`Convert*` 做消息映射 + 别名解析 + protowire 编码；`DoRequest` 发送后用流转换 reader 把 Connect 帧翻译成 OpenAI chunk SSE（同 `antigravitySSEUnwrapReader` 手法），`DoResponse` 完全复用 openai。
 - `relay/channel/devinsub/wire.go`：protowire 编解码 + Connect 分帧（移植 `devin_wire.go` 子集：metadata/历史/工具/tool_choice/configuration/trajectory 编码，帧解析 delta/tool_call/usage/thinking；签名回放与 dimension_groups 用量回退尚未实现）。
-- `relay/channel/devinsub/constant.go`：base URL、RPC 路径、客户端指纹（`chisel`/`3000.x.y`）、模型别名表（`swe-2`/`swe-2-flash` → 默认 effort）。
-- `service/devin_oauth.go`：PKCE start/exchange + state/owner-session 存储（复用 antigravity session 骨架）+ `/v3/self` profile 回填。
-- `service/devin_credential.go`：credential 解析/合并、`GetSelfDevinSessionToken` 铸新、lazy ensure。
+- `relay/channel/devinsub/constant.go`：base URL、聊天 RPC 路径与模型别名；聊天和 unary RPC 的客户端 metadata 共用 [`pkg/devinwire/metadata.go`](../../pkg/devinwire/metadata.go)。
+- `service/devin_oauth.go`：PKCE start/exchange + state/owner-session 存储（与 Grok 共用 [`service/pkce_oauth_session.go`](../../service/pkce_oauth_session.go)）+ `/v3/self` profile 回填。
+- `service/devin_credential.go`：credential 解析/合并与 `GetSelfDevinSessionToken` 手动刷新。
 - `service/devin_usage.go`：`GetUserStatus` 账户信息 + `GetCliModelConfigs` 目录过滤；未验证的配额与能力字段不对外展示。
 - `controller/devin_oauth.go`：`POST /devin/oauth/login`、`POST /devin/oauth/exchange`、`POST /:id/devin/refresh`、`GET /:id/devin/usage`（权限点同 antigravity）。
-- 接入点：`constant/api_type.go`、`constant/channel.go`、`relay/relay_adaptor.go`、`relay/common/relay_info.go`（streamSupportedChannels）、`middleware/distributor.go`（lazy ensure）、`service/channel_select.go`（如需要）、`router/channel-router.go`、`controller/channel.go`（Key JSON 校验 + FetchModels 豁免拆分）、`controller/channel_upstream_update.go`（模型发现）。
+- 接入点：`constant/api_type.go`、`constant/channel.go`、`relay/relay_adaptor.go`、`relay/common/relay_info.go`（streamSupportedChannels）、`service/channel_select.go`（如需要）、`router/channel-router.go`、`controller/channel.go`（Key JSON 校验 + FetchModels 豁免拆分）、`controller/channel_upstream_update.go`（模型发现）。
 - `web/`：`devin-oauth-login-dialog.tsx`（开登录页 + 粘贴 code）、usage dialog、drawer 集成、`api.ts`、`constants.ts`、7 个 locale 文件。
 
 ### 模型暴露
@@ -148,14 +148,13 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 - `constant/channel.go`：`ChannelTypeDevinSub = 103`，默认 BaseURL `https://server.codeium.com`；`constant/api_type.go` / `common/api_type.go`：`APITypeDevinSub`；`relay/common/relay_info.go`：加入 `streamSupportedChannels`；`relay/relay_adaptor.go`：注册 `devinsub.Adaptor`。
 - `common/devin_models.go`：统一模型名单与裸名映射，供 relay 与模型发现复用。
 - `relay/channel/devinsub/wire.go`：Connect 帧编解码、chisel 元数据（732-hex 指纹）、`GetChatMessage` 请求构造（CASCADE、prompts/tools/tool_choice/trajectory_reference）、响应帧解析（text/thinking/tool_calls/usage/stop_reason）、trailer 错误解析、UTF-8 边界缓冲。
-- `relay/channel/devinsub/adaptor.go`：`DoRequest` 发 connect+proto 后用 `io.Pipe` reader 把帧流翻译成 OpenAI SSE（role/content/reasoning/tool_call/usage/finish/[DONE]），非流式聚合为 `chat.completion`；`DoResponse` 复用 OpenAI 处理器；会话亲和按 `prompt_cache_key` 否则 `(channel,model,user)` 派生 SHA1 UUID；UA 置空，`Sentry-Trace` 仅 chat 请求。
-- `service/devin_credential.go`：凭据 JSON（`session_token`/`api_key`/`user_id`/`org_id` 等）；`AccessToken()` 优先 `cog_*` api_key；`EnsureDevinChannelSessionToken` 仅在 session_token 缺失且存在 api_key 时经 `GetSelfDevinSessionToken` 铸新，行锁持久化。
+- `relay/channel/devinsub/adaptor.go`：`DoRequest` 发 connect+proto 后用 `io.Pipe` reader 把帧流翻译成 OpenAI SSE（role/content/reasoning/tool_call/usage/finish/[DONE]），非流式聚合为 `chat.completion`；`DoResponse` 复用 OpenAI 处理器；默认每次请求使用独立 session；显式 `prompt_cache_key` 才启用会话亲和，并加入 user/channel/model 作用域；UA 置空，`Sentry-Trace` 仅 chat 请求。
+- `service/devin_credential.go`：凭据 JSON（`session_token`/`api_key`/`user_id`/`org_id` 等）；凭据选择及手动刷新以 [`service/devin_credential.go`](../../service/devin_credential.go) 为准；没有 relay 自动 mint。
 - `service/devin_oauth.go`：PKCE（S256）登录，`app.devin.ai/auth/cli/continue` + `api.devin.ai/auth/cli/token`，state/session 绑 owner、10min TTL，接受粘贴 code 或回调 URL。
 - `service/devin_wire.go` / `service/devin_usage.go`：`GetUserStatus` + `GetCliModelConfigs` 探测，输出账户信息与受支持模型目录；`FetchDevinChannelModels` 按目录过滤 swe-2 家族 uid（供渠道上游模型同步），含裸名别名。
 - `controller/devin_oauth.go` + `router/channel-router.go`：`POST /devin/oauth/login`、`POST /devin/oauth/exchange`、`POST /:id/devin/refresh`、`GET /:id/devin/usage`。
-- `middleware/distributor.go`：非 multi-key 渠道惰性 `EnsureDevinChannelSessionToken`（每次请求仅一次 JSON 解析）。
 - `controller/channel.go`：key 必须是合法凭据 JSON；`controller/channel_upstream_update.go`：Devin 模型同步走目录探测。
-- 无周期刷新任务：session token 寿命服务端可控且不可预知，`api_key` 本身可作 bearer，惰性铸新已覆盖；如需预热可后续再加。
+- 没有周期或惰性刷新任务；session token 寿命由服务端管理。
 
 **前端**（`web/src/features/channels/`）
 
@@ -163,7 +162,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 - `dialogs/devin-oauth-login-dialog.tsx`：两步 OAuth（打开授权页 → 粘贴 code/回调 URL → 回填 key）+ `DevinOAuthControls`（含个人使用免责声明）。
 - `dialogs/devin-usage-dialog.tsx`：plan/账户徽章、SWE-2 模型目录卡、Raw JSON；不展示未验证的 credits/can_use 字段。
 - `channel-mutate-drawer.tsx`：OAuth 控件 + 编辑态手动刷新按钮；`channels-columns.tsx`：余额列点击弹 usage（`isAccountInfoChannel` 纳入 Devin）。
-- i18n：7 个 locale 文件各 +22 key，`static-keys.ts` 登记渠道名/描述。
+- i18n：UI 文案与后端控制台消息覆盖各语言，后端消息在 `static-keys.ts` 登记。
 
 **验证**
 
@@ -180,7 +179,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 
 **真机联调（2026-11-08，Pro 账号 devin-session-token）**
 
-- `GetUserStatus`/`GetCliModelConfigs`/`GetSelfDevinSessionToken` 为 **unary** RPC：必须用 `application/proto` + 原始 protobuf body；`connect+proto` 信封返回 415（已修正 `postDevinConnectRPC`）。
+- `GetUserStatus`/`GetCliModelConfigs` 为 **unary** RPC：必须用 `application/proto` + 原始 protobuf body；`connect+proto` 信封返回 415（已修正 `postDevinConnectRPC`）。
 - `GetChatMessage` 为服务端流：`connect+proto` 信封，流式/非流式端到端通过——reasoning、content、finish_reason、真实 usage（含 `cached_tokens`，观察到 prompt cache 命中 448/471）均正确。
 - 目录实测（260 条）中 swe-2 家族共 9 个 uid：`swe-2-{medium,high,max}` + `swe-2-{medium,high,max}-lightning`（cost_tier 3，更低）+ `swe-2-flash-{medium,high,max}`；`-low` 与 `-usa` 变体未在目录中（保留在白名单内，上游拒绝时走 trailer 错误透出）。`-lightning` 变体已加入白名单并实测 `swe-2-max-lightning` 正常返回。
 - 当时通过 service 侧镜像名单对齐模型过滤；这只能保证协议支持的 UID 一致，不能保证账户权限或上游可用性。
@@ -196,7 +195,7 @@ Connect 流必须以合法 end-stream trailer 结束。首帧错误映射 HTTP �
 
 工具选择支持 `none`、`auto`、`required` 和已声明的命名函数。字段布局依据 [devin2api 提取的 protobuf](https://github.com/WncFht/devin2api/blob/main/outputs/devin-proto/all-protos.proto) 中 `ExaChatPb_ChatToolChoice`；Connect 终止语义依据 [Connect Protocol Reference](https://connectrpc.com/docs/protocol/)。图片 URL 和 data URI 共用现有文件服务，保留下载限制和 SSRF 校验，读取失败不再静默丢图。
 
-手动刷新会铸造新 session token；并发更新了凭据、base URL 或 proxy 时拒绝覆盖，其他请求已经刷新的 token 则保留。数据库结构、SQL 与共享行锁实现没有修改。安全参考为 [OWASP ASVS 5.0.0](https://github.com/OWASP/ASVS/tree/v5.0.0)、[Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) 和 [Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)；刷新错误日志不含上游凭据或响应内容。此处不声明完整 ASVS 合规。
+手动刷新会铸造新 session token；并发更新了凭据、base URL 或 proxy 时拒绝覆盖，保留已保存的版本。数据库结构、SQL 与共享行锁实现没有修改。安全参考为 [OWASP ASVS 5.0.0](https://github.com/OWASP/ASVS/tree/v5.0.0)、[Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) 和 [Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)；刷新错误日志不含上游凭据或响应内容。此处不声明完整 ASVS 合规。
 
 本次本地验证使用临时 fixture，完成后删除，不新增永久单元测试：
 
@@ -232,3 +231,52 @@ Connect 流必须以合法 end-stream trailer 结束。首帧错误映射 HTTP �
 | `image_url` | 网关下载临时本地 URL 的纯红 PNG，再转发真实上游 | 回答 red；prompt 497 / completion 43，cached 64 |
 
 URL 图片 fixture 仅在隔离测试进程中允许本地 HTTP 下载，生产文件服务的 SSRF 配置不变。以上用量是本次独立观测，不是固定计费参数。账户没有可用的 durable `cog_*` key，故不声明真实 mint/刷新已验证；其持久化、失败和竞争路径已由前节三数据库 fixture 验证。交互式 OAuth 授权与换码仍需浏览器登录覆盖。未故意触发真实账号限流或配额耗尽；异常 trailer 和截断依赖本地协议回归。
+
+
+## PR #8 review 修正与复现（2026-11-11）
+
+基于已合入 Antigravity 的主线处理 TonyCrane 的 review。渠道编号以 [`constant/channel.go`](../../constant/channel.go) 和前端渠道常量为准；已有旧版 Devin 渠道若曾持久化为 102，升级前需按渠道身份确认，不能把当前 Antigravity 的记录统一改号。
+
+本次协议修正包括：上游 token 字段、重复字段累加与总和使用宿主的有界转换，异常保留 `QuotaClamp` 供 consume log 审计；显式 `max_tokens=0` 与缺省分别编码；成功流按 finish → usage → DONE 发送。共享 OpenAI handler 只对 Devin 识别本次引入的错误事件，其他渠道保持原行为。
+
+工具参数的 invalid JSON 与损坏 protobuf 现在返回错误。流式与非流式使用同一调用状态，显式 ID 选定活跃槽，省略 ID 的续帧接到最近活跃调用；没有 ID/index 的任意交错调用仍无法凭空恢复。默认请求使用独立 session，只有显式 cache key 才共享，并加入用户、渠道与模型作用域。停止原因依据提取的 protobuf：长度或部分输出保留 `length`，工具调用与内容过滤保留对应原因，上游失败不伪装正常停止。
+
+删除 relay 中无调用的 decoder 与未使用 RPC 常量；metadata/fingerprint 由 `pkg/devinwire` 统一提供。Devin/Grok 的 pending OAuth transaction 共用 `service/pkce_oauth_session.go`，Redis 为启用时的唯一权威存储，故障拒绝继续而不降级到可能已消费的本地副本。浏览器 owner 只存 hash；事务绑定、TTL 与一次消费在后端执行。更新前已开始的授权可能需要重新发起。
+
+凭据选择和手动刷新以 `service/devin_credential.go` 为准，自动 mint 已移除。聊天与 unary RPC 均禁止跟随重定向，避免 307/308 重放含凭据的 metadata 请求体。控制台使用稳定 `message_key`，动态上游错误不回显或写入日志；相应消息与凭据说明覆盖各语言。
+
+安全核对参考 [ASVS 5.0.0 V10](https://github.com/OWASP/ASVS/blob/v5.0.0/5.0/en/0x19-V10-OAuth-and-OIDC.md) 的 v5.0.0-10.1.2、v5.0.0-10.2.1，以及前文 Authentication、Session Management 与 [OAuth2 Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/OAuth2_Cheat_Sheet.html)。验证范围是 Devin/Grok 待完成的授权事务与本次刷新路径，不构成完整 session 管理或 ASVS 合规声明。
+
+### 本地协议和凭据验证
+
+临时 fixture 完成后移出仓库，不新增永久单元测试。Go 环境为 1.27.1 darwin/arm64。
+
+- `go test -race ./relay/channel/devinsub -run '^TestDevinProtocolReview' -count=1`：通过。覆盖 usage 越界、累加与审计标记、显式零值、会话隔离、工具续帧、停止原因、include_usage、OpenAI/Claude/Responses 的 trailer 错误与截断、其他 OpenAI 渠道行为，以及聊天重定向。
+- `go test -race ./service -run '^TestDevinReview' -count=1 -v`：使用 SQLite 3.50.4、真实 Redis 8.4.0 通过。覆盖错误 owner、过期、消费后重放、跨 worker 消费、Redis 故障拒绝、换码失败不重放、手动刷新失败与并发拒写。
+- `go test ./service -run '^TestDevinReviewCredentialPersistence$' -count=1 -v`：配置隔离 DSN，分别在 MySQL 8.4.13 与 PostgreSQL 16.15 通过。测试重复初始化后验证刷新结果影响后续鉴权、失败保留原 key、并发刷新拒绝旧写及配置修改不被覆盖。数据库结构、驱动与共享行锁实现未改。
+- 临时 controller 探针验证 `message_key`、`Cache-Control: no-store`，以及包含伪凭据的 transport 错误不进入响应和日志。
+- `go test -race ./relay/channel/devinsub ./service -run '^(TestDevinProtocolReview|TestDevinUnaryRedirectReview)' -count=1 -v`：最终通过，含聊天与 unary RPC 的 307/308 不重放凭据验证。
+- 清理临时测试后执行 `go build ./...`、`go test ./...`：最终生产代码构建和现有全量后端测试通过。
+- 前端 `bun run typecheck`、改动文件 oxlint/oxfmt、`bun run build` 和现有 server-error/status-tooltip 回归通过；i18n sync 各语言无 missing/extras，本次新增消息齐全。
+
+### 同一本地 session 的修复前后对照
+
+使用本机 CLI 已登录的 session，凭据只在测试进程内读取。修复前副本来自本次修改前的 Git HEAD；两个版本使用同一临时 harness，选用 `swe-2-flash-medium`，串行请求且没有自动重试。
+
+- `DEVIN_LIVE_REVIEW=1 DEVIN_LIVE_CASE=stream go test ./relay/channel/devinsub -run '^TestDevinLiveReview$' -count=1 -v`：修复前出现客户端未请求的 `choices: []` usage 事件，断言失败；修复后不出现，断言通过。
+- 同一命令设置 `DEVIN_LIVE_CASE=length`，发送 `max_tokens=1`：修复前输出一个 token 却标为 `stop`，断言失败；修复后标为 `length`，断言通过。
+
+修复后的目录探测和实际 adaptor Convert → DoRequest → DoResponse 结果：
+
+| case | 观察结果 | prompt / completion / cached tokens |
+| --- | --- | --- |
+| `catalog` | session 可用，目录返回受支持的 SWE-2/Flash 及 lightning UID | 不涉及生成用量 |
+| `chat` | 非流式正常结束 | 397 / 24 / 0 |
+| `stream` | 正常结束，不泄漏 usage-only 事件 | 397 / 27 / 384 |
+| `stream_usage` | 请求 usage 时保留末尾用量事件 | 397 / 30 / 0 |
+| `length` | 一个输出 token，终止原因为 length | 407 / 1 / 0 |
+| `tool` | 强制调用指定测试工具，终止原因为 tool_calls | 446 / 19 / 0 |
+| `claude` | Claude 请求与流桥接正常终止 | 397 / 23 / 0 |
+| `responses` | Responses 请求与流桥接正常终止 | 397 / 28 / 0 |
+
+实际执行 `DEVIN_LIVE_REVIEW=1 go test ./relay/channel/devinsub -run '^TestDevinLiveReview$' -count=1 -v` 的生成用例全部通过。上表仅记录这次独立观测，不是固定计费参数。交互式 OAuth 授权/换码和真实 cog_* mint 仍未覆盖；异常 trailer、超大 usage、缺 ID 续帧与并发刷新由本地 fixture 覆盖，没有故意触发真实账号的限流或配额耗尽。

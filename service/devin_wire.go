@@ -3,68 +3,31 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
-	"runtime"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/google/uuid"
+	"github.com/QuantumNous/new-api/pkg/devinwire"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
-// Minimal Connect-RPC helpers for the service-side Devin calls (session token
-// mint, user status, model catalog). Duplicated from relay/channel/devinsub
-// because service importing the relay adaptor would create an import cycle.
+// Unary Connect-RPC helpers for Devin session tokens, status and model catalogs.
+// Client metadata is shared with the chat relay through the leaf devinwire package.
 
 const (
-	devinConnectClientName    = "chisel"
-	devinConnectClientVersion = "3000.10.21"
-	devinFingerprintHexLength = 732
-	devinDefaultAPIBaseURL    = "https://api.devin.ai"
-	devinSeatServicePath      = "/exa.seat_management_pb.SeatManagementService"
-	devinAPIServicePath       = "/exa.api_server_pb.ApiServerService"
+	devinDefaultAPIBaseURL = "https://api.devin.ai"
+	devinSeatServicePath   = "/exa.seat_management_pb.SeatManagementService"
+	devinAPIServicePath    = "/exa.api_server_pb.ApiServerService"
 )
-
-// devinMetadataBytes builds the ExaCodeiumCommonPb_Metadata submessage shared
-// by every Devin RPC (field layout mirrors relay/channel/devinsub).
-func devinMetadataBytes(token string) []byte {
-	var b []byte
-	b = protowire.AppendTag(b, 1, protowire.BytesType)
-	b = protowire.AppendString(b, devinConnectClientName)
-	b = protowire.AppendTag(b, 2, protowire.BytesType)
-	b = protowire.AppendString(b, devinConnectClientVersion)
-	b = protowire.AppendTag(b, 3, protowire.BytesType)
-	b = protowire.AppendString(b, token)
-	b = protowire.AppendTag(b, 4, protowire.BytesType)
-	b = protowire.AppendString(b, "en")
-	b = protowire.AppendTag(b, 5, protowire.BytesType)
-	b = protowire.AppendString(b, runtime.GOOS)
-	b = protowire.AppendTag(b, 7, protowire.BytesType)
-	b = protowire.AppendString(b, devinConnectClientVersion)
-	b = protowire.AppendTag(b, 12, protowire.BytesType)
-	b = protowire.AppendString(b, devinConnectClientName)
-	b = protowire.AppendTag(b, 31, protowire.BytesType)
-	b = protowire.AppendString(b, devinFingerprint())
-	return b
-}
-
-func devinFingerprint() string {
-	raw := make([]byte, devinFingerprintHexLength/2)
-	if _, err := rand.Read(raw); err != nil {
-		return uuid.New().String() + strings.Repeat("0", devinFingerprintHexLength-36)
-	}
-	return hex.EncodeToString(raw)
-}
 
 // buildDevinMetadataRequest encodes `{ optional Metadata metadata = 1; }`.
 func buildDevinMetadataRequest(token string) []byte {
 	var b []byte
 	b = protowire.AppendTag(b, 1, protowire.BytesType)
-	b = protowire.AppendBytes(b, devinMetadataBytes(token))
+	b = protowire.AppendBytes(b, devinwire.Metadata(token))
 	return b
 }
 
@@ -73,6 +36,8 @@ func buildDevinMetadataRequest(token string) []byte {
 // connect+proto streaming envelope with 415). Returns the response message
 // bytes; upstream error bodies carry a JSON {code,message}.
 func postDevinConnectRPC(ctx context.Context, endpoint, token, proxyURL string, payload []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	client, err := GetHttpClientWithProxy(strings.TrimSpace(proxyURL))
 	if err != nil {
 		return nil, err
@@ -86,7 +51,11 @@ func postDevinConnectRPC(ctx context.Context, endpoint, token, proxyURL string, 
 	req.Header.Set("Authorization", "Basic "+token+"-"+token)
 	req.Header["User-Agent"] = []string{""}
 
-	resp, err := client.Do(req)
+	// A 307/308 redirect would replay the credential-bearing protobuf body,
+	// even if net/http strips Authorization at the new origin.
+	requestClient := *client
+	requestClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := requestClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

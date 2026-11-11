@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/collapsible'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { getServerMessage } from '@/lib/server-error-message'
 
 import type { DevinUsageResponse } from '../../api'
 
@@ -61,7 +62,7 @@ export function DevinUsageDialog(props: DevinUsageDialogProps) {
   const usage = props.response?.data ?? null
   const errorMessage =
     props.response?.success === false
-      ? props.response?.message?.trim() || t('Failed to fetch usage')
+      ? getServerMessage(props.response) || t('Failed to fetch usage')
       : ''
 
   const channelLabelName = props.channelDisplayName ?? props.channelName ?? '-'

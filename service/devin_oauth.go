@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -37,100 +36,12 @@ const (
 var devinOAuthTokenEndpoint = devinOAuthTokenURL
 
 // DevinOAuthSession is one pending PKCE flow.
-type DevinOAuthSession struct {
-	OwnerSession  string
-	State         string
-	CodeVerifier  string
-	CodeChallenge string
-	CreatedAt     time.Time
+type DevinOAuthSession = pkceOAuthSession
+
+var devinOAuthSessionStore = pkceOAuthSessionStore{
+	redisKeyPrefix: "new-api:devin-oauth:",
+	ttl:            devinOAuthSessionTTL,
 }
-
-var (
-	devinOAuthSessionsMu sync.Mutex
-	devinOAuthSessions   = make(map[string]*DevinOAuthSession)
-)
-
-const devinOAuthRedisKeyPrefix = "new-api:devin-oauth:"
-
-const devinOAuthConsumeScript = `
-local owner = redis.call('HGET', KEYS[1], 'owner_session')
-if not owner or owner ~= ARGV[1] then
-  return nil
-end
-local payload = redis.call('HGET', KEYS[1], 'payload')
-redis.call('DEL', KEYS[1])
-return payload
-`
-
-func devinOAuthRedisKey(sessionID string) string {
-	return devinOAuthRedisKeyPrefix + sessionID
-}
-
-func storeDevinOAuthSession(sessionID string, session *DevinOAuthSession) {
-	devinOAuthSessionsMu.Lock()
-	devinOAuthSessions[sessionID] = session
-	devinOAuthSessionsMu.Unlock()
-
-	if !common.RedisEnabled || common.RDB == nil {
-		return
-	}
-	payload, err := common.Marshal(session)
-	if err != nil {
-		common.SysError("failed to marshal devin oauth session: " + err.Error())
-		return
-	}
-	ctx := context.Background()
-	key := devinOAuthRedisKey(sessionID)
-	pipe := common.RDB.TxPipeline()
-	pipe.HSet(ctx, key, "owner_session", session.OwnerSession, "payload", string(payload))
-	pipe.Expire(ctx, key, devinOAuthSessionTTL)
-	if _, err := pipe.Exec(ctx); err != nil {
-		common.SysError("failed to store devin oauth session in Redis: " + err.Error())
-	}
-}
-
-func consumeDevinOAuthSession(sessionID, ownerSession string) (*DevinOAuthSession, bool) {
-	if common.RedisEnabled && common.RDB != nil && ownerSession != "" {
-		result, err := common.RDB.Eval(context.Background(), devinOAuthConsumeScript, []string{devinOAuthRedisKey(sessionID)}, ownerSession).Result()
-		if err != nil {
-			common.SysError("failed to consume devin oauth session from Redis: " + err.Error())
-		} else if payload, ok := result.(string); ok && payload != "" {
-			var session DevinOAuthSession
-			if err := common.Unmarshal([]byte(payload), &session); err != nil {
-				common.SysError("failed to unmarshal devin oauth session from Redis: " + err.Error())
-			} else {
-				devinOAuthSessionsMu.Lock()
-				delete(devinOAuthSessions, sessionID)
-				devinOAuthSessionsMu.Unlock()
-				return &session, true
-			}
-		}
-	}
-
-	devinOAuthSessionsMu.Lock()
-	defer devinOAuthSessionsMu.Unlock()
-	session, ok := devinOAuthSessions[sessionID]
-	if !ok || ownerSession == "" || !constantTimeEqual(session.OwnerSession, ownerSession) {
-		return nil, false
-	}
-	delete(devinOAuthSessions, sessionID)
-	return session, true
-}
-
-func devinOAuthCleanupLoop() {
-	for {
-		time.Sleep(time.Minute)
-		devinOAuthSessionsMu.Lock()
-		for id, session := range devinOAuthSessions {
-			if time.Since(session.CreatedAt) > devinOAuthSessionTTL {
-				delete(devinOAuthSessions, id)
-			}
-		}
-		devinOAuthSessionsMu.Unlock()
-	}
-}
-
-var devinOAuthCleanupOnce sync.Once
 
 func devinOAuthRandomHex(n int) (string, error) {
 	buf := make([]byte, n)
@@ -150,9 +61,8 @@ type DevinOAuthAuthURL struct {
 // ExchangeDevinOAuthCode.
 func StartDevinOAuthLogin(ownerSession string) (*DevinOAuthAuthURL, error) {
 	if ownerSession == "" {
-		return nil, errors.New("devin oauth: browser session required")
+		return nil, common.NewMessage("Browser session is required. Please log in again")
 	}
-	devinOAuthCleanupOnce.Do(func() { go devinOAuthCleanupLoop() })
 
 	state, err := devinOAuthRandomHex(32)
 	if err != nil {
@@ -170,13 +80,15 @@ func StartDevinOAuthLogin(ownerSession string) (*DevinOAuthAuthURL, error) {
 		return nil, fmt.Errorf("devin oauth: generate session id: %w", err)
 	}
 
-	storeDevinOAuthSession(sessionID, &DevinOAuthSession{
+	if err := devinOAuthSessionStore.store(sessionID, &DevinOAuthSession{
 		OwnerSession:  ownerSession,
 		State:         state,
 		CodeVerifier:  codeVerifier,
 		CodeChallenge: codeChallenge,
 		CreatedAt:     time.Now(),
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("devin oauth: store session: %w", err)
+	}
 
 	params := url.Values{}
 	params.Set("redirect_uri", devinOAuthRedirectURI)
@@ -197,7 +109,7 @@ func StartDevinOAuthLogin(ownerSession string) (*DevinOAuthAuthURL, error) {
 func parseDevinOAuthCallback(input string, session *DevinOAuthSession) (string, error) {
 	trimmed := strings.TrimSpace(input)
 	if trimmed == "" {
-		return "", errors.New("devin oauth: empty callback input")
+		return "", common.NewMessage("Authorization code is required")
 	}
 	if strings.Contains(trimmed, "=") {
 		code := ""
@@ -215,13 +127,13 @@ func parseDevinOAuthCallback(input string, session *DevinOAuthSession) (string, 
 		}
 		if code != "" {
 			if state == "" || !constantTimeEqual(state, session.State) {
-				return "", errors.New("devin oauth: state mismatch, please restart OAuth login")
+				return "", common.NewMessage("OAuth state mismatch. Please restart OAuth login")
 			}
 			return code, nil
 		}
 	}
-	if strings.Contains(trimmed, " ") || strings.Contains(trimmed, "/") {
-		return "", errors.New("devin oauth: callback input does not contain an authorization code")
+	if strings.ContainsAny(trimmed, " \t\r\n/?&") {
+		return "", common.NewMessage("Authorization callback does not contain a valid code")
 	}
 	return trimmed, nil
 }
@@ -249,9 +161,9 @@ type devinOAuthTokenResponse struct {
 // ExchangeDevinOAuthCode swaps the pasted authorization code for a Devin
 // session token and assembles the channel credential JSON.
 func ExchangeDevinOAuthCode(ctx context.Context, sessionID, input, proxyURL, ownerSession string) (string, error) {
-	session, ok := consumeDevinOAuthSession(sessionID, ownerSession)
-	if !ok || session == nil || time.Since(session.CreatedAt) > devinOAuthSessionTTL {
-		return "", errors.New("devin oauth: session not found or expired, please restart OAuth login")
+	session, ok := devinOAuthSessionStore.consume(sessionID, ownerSession)
+	if !ok {
+		return "", common.NewMessage("OAuth session was not found or has expired. Please restart OAuth login")
 	}
 
 	code, err := parseDevinOAuthCallback(input, session)
@@ -295,12 +207,12 @@ func ExchangeDevinOAuthCode(ctx context.Context, sessionID, input, proxyURL, own
 	if err := common.Unmarshal(body, &tokenResp); err != nil {
 		return "", errors.New("devin oauth: invalid token response")
 	}
-	rawToken := tokenResp.Token
+	rawToken := strings.TrimSpace(tokenResp.Token)
 	if rawToken == "" {
-		rawToken = tokenResp.SessionToken
+		rawToken = strings.TrimSpace(tokenResp.SessionToken)
 	}
 	if rawToken == "" {
-		rawToken = tokenResp.AccessToken
+		rawToken = strings.TrimSpace(tokenResp.AccessToken)
 	}
 	if rawToken == "" {
 		return "", errors.New("devin oauth: token response missing token")
