@@ -10,13 +10,14 @@ import (
 	"time"
 )
 
-// The quota overview has one line per channel, always in channel ID order. The
+// The quota overview has one section per channel, always in channel ID order. The
 // weekly window sits on a date axis and the 5h window on an hour axis, each
 // drawn where it falls in time with dark = used and light = remaining; an
 // orange line marks now, and used quota past it is ahead of pace and turns red.
 // Reset cards get a third, narrow date axis at the end of the row, one thin
 // lane per card type; Grok, which has none, shows its monthly dollar allowance
-// there instead. Channels whose upstream query failed keep their row: their
+// there instead. Model-group quotas use a two-column grid inside the channel row,
+// without inventing shared time windows. Failed channels keep their row: their
 // windows are blanked and the error is printed across the row.
 
 const (
@@ -48,27 +49,28 @@ const (
 	right      = quotaWidth - margin - pad
 	nameWidth  = 192.0
 	// Right edges of the value cells, then the three time axes they introduce.
-	weightValue   = 272.0
-	priorityValue = 304.0
-	weekValue     = 370.0
-	weekX0        = 384.0
-	weekX1        = 702.0
-	fiveValue     = 770.0
-	fiveX0        = 784.0
-	fiveX1        = 982.0
-	cardLabel     = 996.0
-	cardValue     = 1028.0
-	cardX0        = 1040.0
-	titleHeight   = 60.0
-	headHeight    = 34.0
-	rowHeight     = 52.0
-	laneOffset    = 9.0 // Zhipu's week and 5h card lanes sit this far above/below centre
-	chipGap       = 10.0
-	barHeight     = 12.0
-	tagHeight     = 15.0
-	tagPad        = 4.0
-	tagGap        = 4.0
-	maxQuotaImage = 20000.0
+	weightValue        = 272.0
+	priorityValue      = 304.0
+	weekValue          = 370.0
+	weekX0             = 384.0
+	weekX1             = 702.0
+	fiveValue          = 770.0
+	fiveX0             = 784.0
+	fiveX1             = 982.0
+	cardLabel          = 996.0
+	cardValue          = 1028.0
+	cardX0             = 1040.0
+	titleHeight        = 60.0
+	headHeight         = 34.0
+	rowHeight          = 52.0
+	laneOffset         = 9.0 // Zhipu's week and 5h card lanes sit this far above/below centre
+	chipGap            = 10.0
+	barHeight          = 12.0
+	tagHeight          = 15.0
+	tagPad             = 4.0
+	tagGap             = 4.0
+	maxQuotaImage      = 20000.0
+	quotaBucketColumns = 2
 )
 
 // tagColors are (fill, text) pairs; a group keeps its colour across rows.
@@ -112,24 +114,42 @@ type ResetPool struct {
 	ExpiresAt []float64
 }
 
-// QuotaRow is one channel line of the overview.
+// QuotaBucket is an independently reported model-group quota window. Missing
+// percentages and reset times stay unknown rather than implying a full balance.
+type QuotaBucket struct {
+	ID               string
+	Name             string
+	RemainingPercent *float64
+	ResetAt          *float64
+	Disabled         bool
+}
+
+// QuotaRow is one channel section of the overview.
 type QuotaRow struct {
-	ChannelID   int
-	Name        string
-	Provider    string
-	Status      string
-	Weight      *int64
-	Priority    *int64
-	Plan        string
-	Weekly      *QuotaWindow
-	FiveHour    *QuotaWindow
-	Monthly     *QuotaWindow
-	ResetNote   string
-	ResetPools  []ResetPool
-	Issue       string
-	Unsupported bool
-	LimitNote   string
-	Groups      []string
+	ChannelID    int
+	Name         string
+	Provider     string
+	Status       string
+	Weight       *int64
+	Priority     *int64
+	Plan         string
+	Weekly       *QuotaWindow
+	FiveHour     *QuotaWindow
+	Monthly      *QuotaWindow
+	QuotaBuckets []QuotaBucket
+	ResetNote    string
+	ResetPools   []ResetPool
+	Issue        string
+	Unsupported  bool
+	LimitNote    string
+	Groups       []string
+}
+
+func (r QuotaRow) height() float64 {
+	if r.Issue != "" {
+		return rowHeight
+	}
+	return float64(max(1, (len(r.QuotaBuckets)+quotaBucketColumns-1)/quotaBucketColumns)) * rowHeight
 }
 
 // VersionLabel returns the provider and plan label shown under a channel name.
@@ -471,6 +491,49 @@ func drawMonthlyCell(p painter, cy float64, row *QuotaRow, now float64) {
 	}
 }
 
+func drawQuotaBuckets(p painter, y float64, buckets []QuotaBucket, now float64) {
+	x0 := priorityValue + 24
+	columnWidth := (right - x0) / quotaBucketColumns
+	for index, bucket := range buckets {
+		x := x0 + float64(index%quotaBucketColumns)*columnWidth
+		cy := y + (float64(index/quotaBucketColumns)+0.5)*rowHeight
+		x1 := x + columnWidth - 16
+		name := p.fit(bucket.Name, columnWidth-98, 12, Regular)
+		p.text(x, cy-7, name, 12, ink, Regular, alignLeft)
+		label, color := "额度未知", muted
+		if bucket.RemainingPercent != nil && !bucket.Disabled {
+			label, color = "余 "+percentText(*bucket.RemainingPercent), ink
+			if *bucket.RemainingPercent < 10 {
+				color = over
+			}
+		}
+		if bucket.Disabled {
+			label = "额度不可用"
+		}
+		p.text(x1, cy-7, label, 13, color, Bold, alignRight)
+		p.rect(x, cy+6, x+88, cy+12, grid, 3)
+		if bucket.RemainingPercent != nil && !bucket.Disabled {
+			p.rect(x, cy+6, x+88, cy+12, fivePale, 3)
+			used := (100 - *bucket.RemainingPercent) / 100
+			usedColor := five
+			if *bucket.RemainingPercent < 10 {
+				usedColor = over
+			}
+			if used > 0 {
+				p.rect(x, cy+6, x+88*used, cy+12, usedColor, 3)
+			}
+		}
+		reset := "重置时间未知"
+		if bucket.ResetAt != nil {
+			reset = "待刷新"
+			if *bucket.ResetAt > now {
+				reset = durationText(*bucket.ResetAt-now) + "后重置"
+			}
+		}
+		p.text(x+100, cy+9, p.fit(reset, x1-x-100, 11, Regular), 11, sub, Regular, alignLeft)
+	}
+}
+
 // cardChip is the cards of one bin on the card axis.
 type cardChip struct {
 	x       float64
@@ -599,8 +662,8 @@ func drawLegend(p painter, titleY float64) {
 
 // blankRowCells paints over the grid from x to the right edge of a row, keeping
 // its rules, so the row can show something other than the axes.
-func blankRowCells(p painter, x, y, rowsBottom float64) {
-	rowBottom := y + rowHeight
+func blankRowCells(p painter, x, y, height, rowsBottom float64) {
+	rowBottom := y + height
 	p.rect(x, y-1, right, rowBottom+1, panel, 0)
 	p.line(x, y, right, y, rule, 1)
 	if rowBottom < rowsBottom {
@@ -608,7 +671,7 @@ func blankRowCells(p painter, x, y, rowsBottom float64) {
 	}
 }
 
-// Quota renders the overview as a PNG: one line per supported channel in the
+// Quota renders the overview as a PNG: one section per supported channel in the
 // given order. Unsupported types are left out, failed channels keep their row
 // with the error printed, and groups in hidden get no tag.
 func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool) ([]byte, error) {
@@ -619,11 +682,14 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 			continue
 		}
 		supported = append(supported, row)
-		if row.Issue == "" {
+		if row.Issue == "" && len(row.QuotaBuckets) == 0 {
 			live = append(live, row)
 		}
 	}
-	body := float64(len(supported)) * rowHeight
+	body := 0.0
+	for _, row := range supported {
+		body += row.height()
+	}
 	if len(supported) == 0 {
 		body = 64
 	}
@@ -646,15 +712,22 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 	p.rect(margin, top, quotaWidth-margin, height-margin, panel, 14)
 	head := top + headHeight/2 + 1
 	rowsTop := top + headHeight
-	rowsBottom := rowsTop + float64(len(supported))*rowHeight
+	rowsBottom := rowsTop + body
 	weekScale := weekAxis(live, now)
 	fiveScale := axis{now - 5*hourLength, now + 5*hourLength, fiveX0, fiveX1}
 	cardScale := cardAxis(live, now)
 	p.text(weightValue, head, "W", 12, sub, Bold, alignRight)
 	p.text(priorityValue, head, "P", 12, sub, Bold, alignRight)
-	p.text(weekValue, head, "周", 12, sub, Bold, alignRight)
-	p.text(fiveValue, head, "5h", 12, sub, Bold, alignRight)
-	p.text(cardValue, head, "重置卡", 12, sub, Bold, alignRight)
+	quotaOnly := len(live) == 0 && slices.ContainsFunc(supported, func(row QuotaRow) bool {
+		return row.Issue == "" && len(row.QuotaBuckets) > 0
+	})
+	if quotaOnly {
+		p.text(priorityValue+24, head, "模型组额度 · 剩余比例 / 重置时间", 12, sub, Bold, alignLeft)
+	} else {
+		p.text(weekValue, head, "周", 12, sub, Bold, alignRight)
+		p.text(fiveValue, head, "5h", 12, sub, Bold, alignRight)
+		p.text(cardValue, head, "重置卡", 12, sub, Bold, alignRight)
+	}
 	if len(live) > 0 {
 		drawDateHead(p, weekScale, head, rowsTop, rowsBottom, now)
 		drawHourHead(p, fiveScale, head, rowsTop, rowsBottom)
@@ -668,7 +741,7 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 		drawName(p, cy-9, row, hidden)
 		drawRoutingCell(p, weightValue, cy, row.Weight)
 		drawRoutingCell(p, priorityValue, cy, row.Priority)
-		if row.Issue == "" {
+		if row.Issue == "" && len(row.QuotaBuckets) == 0 {
 			drawValueCell(p, weekValue, cy, row.Weekly, now)
 			drawValueCell(p, fiveValue, cy, row.FiveHour, now)
 			drawWindowBar(p, row.Weekly, cy, weekScale, now, week, weekPale)
@@ -677,7 +750,7 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 				drawCardCell(p, cy, row, cardScale, now)
 			}
 		}
-		y += rowHeight
+		y += row.height()
 	}
 	if len(live) > 0 {
 		for _, scale := range []axis{weekScale, fiveScale, cardScale} {
@@ -685,21 +758,24 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 		}
 	}
 	// Second pass for rows that blank part of the grid: failed rows paint over
-	// all three axes to print their error, and Grok rows blank the card axis
-	// for their monthly cell. Both must run after the now lines.
+	// all three axes to print their error or grouped quotas, and Grok rows blank
+	// the card axis for their monthly cell. This runs after the now lines.
 	y = rowsTop
 	for i := range supported {
 		row := &supported[i]
 		if row.Issue != "" {
 			x0 := priorityValue + 12
-			blankRowCells(p, x0, y, rowsBottom)
+			blankRowCells(p, x0, y, row.height(), rowsBottom)
 			issue := p.fit(row.Issue, right-x0-12, 13, Regular)
 			p.text(x0+12, y+rowHeight/2, issue, 13, over, Regular, alignLeft)
+		} else if len(row.QuotaBuckets) > 0 {
+			blankRowCells(p, priorityValue+12, y, row.height(), rowsBottom)
+			drawQuotaBuckets(p, y, row.QuotaBuckets, now)
 		} else if row.Provider == ProviderGrok {
-			blankRowCells(p, cardLabel-6, y, rowsBottom)
+			blankRowCells(p, cardLabel-6, y, row.height(), rowsBottom)
 			drawMonthlyCell(p, y+rowHeight/2, row, now)
 		}
-		y += rowHeight
+		y += row.height()
 	}
 	if len(supported) == 0 {
 		p.text(quotaWidth/2.0, y+32, "暂无可展示的订阅额度", 15, muted, Regular, alignCenter)

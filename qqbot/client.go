@@ -44,6 +44,7 @@ func newAPIEngine() *gin.Engine {
 	api.GET("/channel/:id/codex/usage/reset-credits", controller.GetCodexChannelRateLimitResetCredits)
 	api.GET("/channel/:id/zhipu/coding-plan/usage", controller.GetZhipuCodingPlanUsage)
 	api.GET("/channel/:id/grok/usage", controller.GetGrokChannelUsage)
+	api.GET("/channel/:id/antigravity/usage", controller.GetAntigravityChannelUsage)
 	api.GET("/data/flow", controller.GetAllFlowQuotaDates)
 	return engine
 }
