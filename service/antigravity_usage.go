@@ -1,10 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -63,6 +66,22 @@ type AntigravityModelQuota struct {
 	ResetTime         string   `json:"reset_time,omitempty"`
 }
 
+type AntigravityQuotaGroup struct {
+	DisplayName string                   `json:"display_name,omitempty"`
+	Description string                   `json:"description,omitempty"`
+	Buckets     []AntigravityQuotaBucket `json:"buckets,omitempty"`
+}
+
+type AntigravityQuotaBucket struct {
+	BucketID          string   `json:"bucket_id,omitempty"`
+	DisplayName       string   `json:"display_name,omitempty"`
+	Window            string   `json:"window,omitempty"`
+	RemainingFraction *float64 `json:"remaining_fraction,omitempty"`
+	ResetTime         string   `json:"reset_time,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	Disabled          bool     `json:"disabled,omitempty"`
+}
+
 type AntigravityProbeStatus struct {
 	Source  string `json:"source"`
 	Path    string `json:"path"`
@@ -80,6 +99,7 @@ type AntigravityUsageResult struct {
 	PaidTierName    string                    `json:"paid_tier_name,omitempty"`
 	Credits         []AntigravityCreditStatus `json:"credits,omitempty"`
 	Models          []AntigravityModelQuota   `json:"models,omitempty"`
+	QuotaGroups     []AntigravityQuotaGroup   `json:"quota_groups,omitempty"`
 	Probes          []AntigravityProbeStatus  `json:"probes"`
 	FetchedAt       string                    `json:"fetched_at"`
 }
@@ -179,6 +199,16 @@ func parseAntigravityAvailableModelsList(body []byte) ([]string, error) {
 }
 
 func FetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string) (*AntigravityUsageResult, error) {
+	return fetchAntigravityUsage(ctx, baseURL, rawKey, proxyURL, false)
+}
+
+// FetchAntigravityQuotaSummary retrieves the native grouped quota windows
+// without waiting for the independent model catalog and account metadata probes.
+func FetchAntigravityQuotaSummary(ctx context.Context, baseURL, rawKey, proxyURL string) (*AntigravityUsageResult, error) {
+	return fetchAntigravityUsage(ctx, baseURL, rawKey, proxyURL, true)
+}
+
+func fetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string, summaryOnly bool) (*AntigravityUsageResult, error) {
 	accessToken, err := ExtractAntigravityAccessToken(rawKey)
 	if err != nil {
 		return nil, err
@@ -198,7 +228,30 @@ func FetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string
 		return nil, err
 	}
 
-	// 1. Probe loadCodeAssist for project, tier, and available credits.
+	if summaryOnly {
+		// The native groups are authoritative. Never fill missing groups or windows
+		// from a different endpoint or from the legacy per-model fractions.
+		summaryPayload := map[string]any{}
+		if out.ProjectID != "" {
+			summaryPayload["project"] = out.ProjectID
+		}
+		summaryCtx, cancelSummary := context.WithTimeout(ctx, 15*time.Second)
+		for _, candidateBase := range ResolveAntigravityBaseURLs(baseURL) {
+			if summaryCtx.Err() != nil {
+				break
+			}
+			probe, groups := probeAntigravityQuotaSummary(summaryCtx, client, candidateBase+"/v1internal:retrieveUserQuotaSummary", accessToken, summaryPayload)
+			out.Probes = append(out.Probes, probe)
+			if probe.OK {
+				out.QuotaGroups = groups
+				break
+			}
+		}
+		cancelSummary()
+		return out, nil
+	}
+
+	// Probe loadCodeAssist for project, tier, and available credits.
 	probe, body := probeAntigravityUsageEndpoint(ctx, client, "load_code_assist", antigravityLoadCodeAssistEndpoint(), "/v1internal:loadCodeAssist", accessToken, map[string]any{
 		"metadata": antigravityIDEMetadata,
 	})
@@ -207,7 +260,7 @@ func FetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string
 		applyAntigravityLoadCodeAssistUsage(out, body)
 	}
 
-	// 2. Probe fetchAvailableModels for per-model quota fractions and reset times.
+	// Probe fetchAvailableModels for per-model quota fractions and reset times.
 	modelsPayload := map[string]any{}
 	if out.ProjectID != "" {
 		modelsPayload["project"] = out.ProjectID
@@ -222,6 +275,90 @@ func FetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string
 	}
 
 	return out, nil
+}
+
+func probeAntigravityQuotaSummary(ctx context.Context, client *http.Client, endpoint, accessToken string, payload any) (AntigravityProbeStatus, []AntigravityQuotaGroup) {
+	probe := AntigravityProbeStatus{Source: "retrieve_user_quota_summary", Path: "/v1internal:retrieveUserQuotaSummary"}
+	rawBody, err := common.Marshal(payload)
+	if err != nil {
+		probe.Message = "Failed to encode quota summary request"
+		return probe, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(rawBody))
+	if err != nil {
+		probe.Message = "Invalid quota summary endpoint"
+		return probe, nil
+	}
+	ApplyAntigravityHeaders(req.Header, accessToken, false)
+	// The grouped quota API uses the native CLI identity, independently of the
+	// hub identity used by relay and legacy probes. Keep the operator override.
+	userAgent := strings.TrimSpace(os.Getenv("ANTIGRAVITY_USER_AGENT"))
+	if userAgent == "" {
+		userAgent = "antigravity/cli/1.5.5"
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		probe.Message = "Quota summary request failed"
+		return probe, nil
+	}
+	defer resp.Body.Close()
+	probe.Status = resp.StatusCode
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		probe.Message = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		return probe, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, antigravityOAuthMaxResponseBytes+1))
+	if err != nil {
+		probe.Message = "Failed to read quota summary response"
+		return probe, nil
+	}
+	if len(body) > antigravityOAuthMaxResponseBytes {
+		probe.Message = "Quota summary response is too large"
+		return probe, nil
+	}
+	var parsed *struct {
+		Groups []struct {
+			DisplayName string `json:"displayName"`
+			Description string `json:"description"`
+			Buckets     []struct {
+				BucketID          string   `json:"bucketId"`
+				DisplayName       string   `json:"displayName"`
+				Window            string   `json:"window"`
+				RemainingFraction *float64 `json:"remainingFraction"`
+				ResetTime         string   `json:"resetTime"`
+				Description       string   `json:"description"`
+				Disabled          bool     `json:"disabled"`
+			} `json:"buckets"`
+		} `json:"groups"`
+	}
+	if err := common.Unmarshal(body, &parsed); err != nil || parsed == nil {
+		probe.Message = "Invalid quota summary response"
+		return probe, nil
+	}
+	groups := make([]AntigravityQuotaGroup, 0, len(parsed.Groups))
+	for _, group := range parsed.Groups {
+		entry := AntigravityQuotaGroup{
+			DisplayName: group.DisplayName,
+			Description: group.Description,
+			Buckets:     make([]AntigravityQuotaBucket, 0, len(group.Buckets)),
+		}
+		for _, bucket := range group.Buckets {
+			entry.Buckets = append(entry.Buckets, AntigravityQuotaBucket{
+				BucketID:          bucket.BucketID,
+				DisplayName:       bucket.DisplayName,
+				Window:            bucket.Window,
+				RemainingFraction: bucket.RemainingFraction,
+				ResetTime:         bucket.ResetTime,
+				Description:       bucket.Description,
+				Disabled:          bucket.Disabled,
+			})
+		}
+		groups = append(groups, entry)
+	}
+	probe.OK = true
+	return probe, groups
 }
 
 // probeAntigravityUsageEndpoint calls one usage source and reports its outcome
