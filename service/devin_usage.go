@@ -57,16 +57,25 @@ func devinBaseURLForService(baseURL string) string {
 // FetchDevinUsage probes the seat/plan status of a Devin subscription
 // credential and the SWE-2 model entries of the account catalog.
 func FetchDevinUsage(ctx context.Context, cred *DevinCredential, baseURL, proxyURL string) (*DevinUsageProbe, error) {
-	if cred == nil || cred.AccessToken() == "" {
+	if cred == nil || len(cred.AccessTokens()) == 0 {
 		return nil, errors.New("devin subscription channel: missing credential")
 	}
-	token := cred.AccessToken()
 	base := devinBaseURLForService(baseURL)
 	probe := &DevinUsageProbe{}
 
-	statusPayload, err := postDevinConnectRPC(ctx,
-		base+devinSeatServicePath+"/GetUserStatus", token, proxyURL,
-		buildDevinMetadataRequest(token))
+	// Use the same token order as the relay: a rejected session token falls
+	// back to the durable api_key, which then also serves the catalog call.
+	var token string
+	var statusPayload []byte
+	var err error
+	for _, token = range cred.AccessTokens() {
+		statusPayload, err = postDevinConnectRPC(ctx,
+			base+devinSeatServicePath+"/GetUserStatus", token, proxyURL,
+			buildDevinMetadataRequest(token))
+		if !errors.Is(err, errDevinUnauthenticated) {
+			break
+		}
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -24,14 +24,19 @@ type DevinCredential struct {
 	CreatedAt    string `json:"created_at,omitempty"`
 }
 
-// AccessToken prefers the explicitly acquired session token, so OAuth login
-// and manual refresh affect subsequent calls. API-key-only credentials use
-// the durable key directly without an automatic mint on the relay path.
-func (c *DevinCredential) AccessToken() string {
+// AccessTokens lists the upstream tokens in the order callers should try
+// them. The explicitly acquired session token comes first, so OAuth login and
+// manual refresh affect subsequent calls; the durable api_key follows, so an
+// expired session token does not take down a channel that still has one.
+func (c *DevinCredential) AccessTokens() []string {
+	tokens := make([]string, 0, 2)
 	if c.SessionToken != "" {
-		return c.SessionToken
+		tokens = append(tokens, c.SessionToken)
 	}
-	return c.APIKey
+	if c.APIKey != "" && c.APIKey != c.SessionToken {
+		tokens = append(tokens, c.APIKey)
+	}
+	return tokens
 }
 
 func ParseDevinCredential(raw string) (*DevinCredential, error) {
@@ -44,7 +49,7 @@ func ParseDevinCredential(raw string) (*DevinCredential, error) {
 	}
 	cred.APIKey = strings.TrimSpace(cred.APIKey)
 	cred.SessionToken = strings.TrimSpace(cred.SessionToken)
-	if cred.AccessToken() == "" {
+	if len(cred.AccessTokens()) == 0 {
 		return nil, common.NewMessage("Devin credential requires a session token or API key")
 	}
 	return &cred, nil

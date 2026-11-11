@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,6 +31,10 @@ func buildDevinMetadataRequest(token string) []byte {
 	b = protowire.AppendBytes(b, devinwire.Metadata(token))
 	return b
 }
+
+// errDevinUnauthenticated marks an upstream rejection of the token itself, so
+// callers can retry with the next credential token.
+var errDevinUnauthenticated = errors.New("devin upstream rejected the credential")
 
 // postDevinConnectRPC issues a unary Connect-RPC call (application/proto, raw
 // protobuf body — the seat/catalog/token RPCs are unary and reject the
@@ -69,7 +74,11 @@ func postDevinConnectRPC(ctx context.Context, endpoint, token, proxyURL string, 
 			Code    string `json:"code"`
 			Message string `json:"message"`
 		}
-		if jsonErr := common.Unmarshal(bytes.TrimSpace(body), &connErr); jsonErr == nil && connErr.Code != "" {
+		jsonErr := common.Unmarshal(bytes.TrimSpace(body), &connErr)
+		if resp.StatusCode == http.StatusUnauthorized || strings.EqualFold(connErr.Code, "unauthenticated") {
+			return nil, errDevinUnauthenticated
+		}
+		if jsonErr == nil && connErr.Code != "" {
 			return nil, fmt.Errorf("devin upstream error (%s): %s", connErr.Code, connErr.Message)
 		}
 		return nil, fmt.Errorf("devin upstream returned status %d", resp.StatusCode)

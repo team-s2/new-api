@@ -96,7 +96,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 }
 ```
 
-刷新语义与 Antigravity 不同：没有 refresh_token，也不在 relay 或 usage 路径自动 mint。请求优先使用 session token，缺少时直接使用 API key；这是本项目的双凭据选择策略。手动刷新需要 API key，成功写入的新 session token 会用于后续请求；失败保留原凭据。网络调用在行锁外执行，持久化前核对完整凭据、base URL 与 proxy，拒绝覆盖并发修改。只有 OAuth session token 的渠道到期后需重新登录。实现以 [`service/devin_credential.go`](../../service/devin_credential.go) 为准；不承诺自动检测 token 到期。
+刷新语义与 Antigravity 不同：没有 refresh_token，也不在 relay 或 usage 路径自动 mint。请求优先使用 session token，缺少时直接使用 API key；session token 被上游以认证失败拒绝（HTTP 401 或首个 end-stream trailer 为 `unauthenticated`）且凭据含 API key 时，同一请求在产生任何输出前改用 API key 重试一次，usage 与模型发现同理。手动刷新需要 API key，成功写入的新 session token 会用于后续请求；失败保留原凭据。网络调用在行锁外执行，持久化前核对完整凭据、base URL 与 proxy，拒绝覆盖并发修改。只有 OAuth session token 的渠道到期后需重新登录。实现以 [`service/devin_credential.go`](../../service/devin_credential.go) 为准；不承诺自动检测 token 到期。
 
 ### 文件清单
 

@@ -269,16 +269,15 @@ func buildGetChatMessageRequest(
 	maxTokens *uint,
 	sessionID string,
 	cascadeID string,
+	turnIndex int,
 ) []byte {
 	outputLimit := uint(defaultMaxTokens)
 	if maxTokens != nil {
 		outputLimit = *maxTokens
 	}
-	turnIndex := 0
 	if sessionID == "" {
 		sessionID = uuid.New().String()
-	} else {
-		turnIndex = nextSessionTurnIndex(sessionID)
+		turnIndex = 0
 	}
 	if cascadeID == "" {
 		cascadeID = sessionID

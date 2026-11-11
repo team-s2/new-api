@@ -228,36 +228,10 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 		return nil, err
 	}
 
-	payload := buildGetChatMessageRequest(
-		cred.AccessToken(),
-		upReq.Model,
-		upReq.System,
-		upReq.Prompts,
-		upReq.Tools,
-		upReq.ToolChoice,
-		upReq.Temperature,
-		upReq.MaxTokens,
-		upReq.SessionID,
-		upReq.CascadeID,
-	)
-
 	url, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(wrapConnectEnvelope(connectFlagData, payload)))
-	if err != nil {
-		return nil, err
-	}
-	token := cred.AccessToken()
-	req.Header.Set("Content-Type", "application/connect+proto")
-	req.Header.Set("Connect-Protocol-Version", "1")
-	req.Header.Set("Authorization", "Basic "+token+"-"+token)
-	req.Header.Set("Sentry-Trace", generateSentryTrace())
-	req.Header.Set("Accept", "application/connect+proto")
-	// Native devin-cli suppresses the User-Agent header on the wire.
-	req.Header["User-Agent"] = []string{""}
-
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, err
@@ -266,38 +240,90 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	// never replay the request body to a redirect target.
 	requestClient := *client
 	requestClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := requestClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return resp, nil
+
+	// One logical turn per client request, even when a rejected token is retried.
+	turnIndex := 0
+	if upReq.SessionID != "" {
+		turnIndex = nextSessionTurnIndex(upReq.SessionID)
 	}
 
-	// Peek the first frame: an immediate end-stream trailer carrying an
-	// upstream error (bad model, quota exhausted) must surface as an HTTP
-	// error rather than an empty completion.
-	firstFlag, firstPayload, err := readConnectFrame(resp.Body)
-	if err != nil {
-		resp.Body.Close()
-		return nil, fmt.Errorf("devin subscription channel: read upstream stream: %w", err)
-	}
-	if firstFlag&connectFlagEndStream != 0 {
-		if statusCode, trailerErr := parseDevinTrailerError(firstPayload); trailerErr != nil {
-			resp.Body.Close()
-			resp.StatusCode = statusCode
-			resp.Status = fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode))
-			errBody, _ := common.Marshal(map[string]any{
-				"error": map[string]any{
-					"message": trailerErr.Error(),
-					"type":    "upstream_error",
-					"code":    "devin_upstream",
-				},
-			})
-			resp.Body = io.NopCloser(bytes.NewReader(errBody))
-			resp.Header.Set("Content-Type", "application/json")
+	var resp *http.Response
+	var firstFlag byte
+	var firstPayload []byte
+	tokens := cred.AccessTokens()
+	for i, token := range tokens {
+		// An expired session token falls back to the durable api_key. Retrying is
+		// safe only before any output, so it is limited to authentication errors
+		// reported by the HTTP status or the first end-stream trailer.
+		canFallBack := i+1 < len(tokens)
+		payload := buildGetChatMessageRequest(
+			token,
+			upReq.Model,
+			upReq.System,
+			upReq.Prompts,
+			upReq.Tools,
+			upReq.ToolChoice,
+			upReq.Temperature,
+			upReq.MaxTokens,
+			upReq.SessionID,
+			upReq.CascadeID,
+			turnIndex,
+		)
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, url, bytes.NewReader(wrapConnectEnvelope(connectFlagData, payload)))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/connect+proto")
+		req.Header.Set("Connect-Protocol-Version", "1")
+		req.Header.Set("Authorization", "Basic "+token+"-"+token)
+		req.Header.Set("Sentry-Trace", generateSentryTrace())
+		req.Header.Set("Accept", "application/connect+proto")
+		// Native devin-cli suppresses the User-Agent header on the wire.
+		req.Header["User-Agent"] = []string{""}
+
+		resp, err = requestClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			if canFallBack && resp.StatusCode == http.StatusUnauthorized {
+				resp.Body.Close()
+				continue
+			}
 			return resp, nil
 		}
+
+		// Peek the first frame: an immediate end-stream trailer carrying an
+		// upstream error (bad model, quota exhausted) must surface as an HTTP
+		// error rather than an empty completion.
+		firstFlag, firstPayload, err = readConnectFrame(resp.Body)
+		if err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("devin subscription channel: read upstream stream: %w", err)
+		}
+		if firstFlag&connectFlagEndStream == 0 {
+			break
+		}
+		statusCode, trailerErr := parseDevinTrailerError(firstPayload)
+		if trailerErr == nil {
+			break
+		}
+		resp.Body.Close()
+		if canFallBack && statusCode == http.StatusUnauthorized {
+			continue
+		}
+		resp.StatusCode = statusCode
+		resp.Status = fmt.Sprintf("%d %s", statusCode, http.StatusText(statusCode))
+		errBody, _ := common.Marshal(map[string]any{
+			"error": map[string]any{
+				"message": trailerErr.Error(),
+				"type":    "upstream_error",
+				"code":    "devin_upstream",
+			},
+		})
+		resp.Body = io.NopCloser(bytes.NewReader(errBody))
+		resp.Header.Set("Content-Type", "application/json")
+		return resp, nil
 	}
 
 	if info.IsStream {
