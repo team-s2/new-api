@@ -205,7 +205,12 @@ func GetAntigravityChannelUsage(c *gin.Context) {
 	}
 
 	proxyURL := strings.TrimSpace(ch.GetSetting().Proxy)
-	usage, err := service.FetchAntigravityUsage(ctx, ch.GetBaseURL(), key, proxyURL)
+	var usage *service.AntigravityUsageResult
+	if c.Query("summary_only") == "true" {
+		usage, err = service.FetchAntigravityQuotaSummary(ctx, ch.GetBaseURL(), key, proxyURL)
+	} else {
+		usage, err = service.FetchAntigravityUsage(ctx, ch.GetBaseURL(), key, proxyURL)
+	}
 	if err != nil {
 		common.SysError("failed to fetch antigravity channel usage: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "Failed to fetch Antigravity subscription usage"})

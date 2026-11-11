@@ -22,9 +22,10 @@ const (
 	maxTimestamp     = 253402214400.0 // year 9999; the renderer must not see more
 	upstreamParallel = 4
 
-	kindCodex = "codex"
-	kindZhipu = "zhipu"
-	kindGrok  = "grok"
+	kindCodex       = "codex"
+	kindZhipu       = "zhipu"
+	kindGrok        = "grok"
+	kindAntigravity = "antigravity"
 )
 
 func (c channel) accountKind() string {
@@ -39,6 +40,8 @@ func (c channel) accountKind() string {
 		return kindZhipu
 	case c.Type == constant.ChannelTypeGrokSub:
 		return kindGrok
+	case c.Type == constant.ChannelTypeAntigravitySub:
+		return kindAntigravity
 	}
 	return ""
 }
@@ -335,6 +338,84 @@ func normalizeGrok(row render.QuotaRow, usage map[string]any, usageErr error) re
 	return row
 }
 
+// normalizeAntigravity displays the two shared model groups and their explicit
+// 5h/weekly buckets. Legacy per-model values cannot identify both windows.
+func normalizeAntigravity(row render.QuotaRow, payload map[string]any, usageErr error) render.QuotaRow {
+	if usageErr != nil {
+		row.Issue = issueText(usageErr)
+		return row
+	}
+	usage := objectField(payload, "usage")
+	for _, field := range []string{"paid_tier_name", "paid_tier", "current_tier_name", "current_tier"} {
+		if row.Plan = strings.TrimSpace(textField(usage, field)); row.Plan != "" {
+			break
+		}
+	}
+	if row.Plan == "" {
+		row.Plan = strings.TrimSpace(textField(objectField(payload, "credential"), "plan_tier"))
+	}
+	row.QuotaBuckets = []render.QuotaBucket{
+		{ID: "gemini-5h", Name: "Gemini · 5h"},
+		{ID: "gemini-weekly", Name: "Gemini · 周"},
+		{ID: "3p-5h", Name: "Claude/GPT · 5h"},
+		{ID: "3p-weekly", Name: "Claude/GPT · 周"},
+	}
+	found := false
+	seen := make([]bool, len(row.QuotaBuckets))
+	groups, _ := usage["quota_groups"].([]any)
+	for _, item := range groups {
+		group, _ := item.(map[string]any)
+		buckets, _ := group["buckets"].([]any)
+		for _, item := range buckets {
+			bucket, _ := item.(map[string]any)
+			id := textField(bucket, "bucket_id")
+			index := slices.IndexFunc(row.QuotaBuckets, func(value render.QuotaBucket) bool { return value.ID == id })
+			if index < 0 {
+				continue
+			}
+			window := textField(bucket, "window")
+			if window != "" && !strings.HasSuffix(id, "-"+window) {
+				continue
+			}
+			if seen[index] {
+				continue
+			}
+			seen[index] = true
+			found = true
+			quota := &row.QuotaBuckets[index]
+			if remaining := number(bucket["remaining_fraction"]); remaining != nil && *remaining <= 1 {
+				percent := *remaining * 100
+				quota.RemainingPercent = &percent
+			}
+			quota.ResetAt = resetTimestamp(bucket["reset_time"], false)
+			quota.Disabled, _ = bucket["disabled"].(bool)
+		}
+	}
+	if found {
+		return row
+	}
+	row.QuotaBuckets = nil
+	row.Issue = "上游未返回分组额度"
+	probes, _ := usage["probes"].([]any)
+	for _, item := range probes {
+		probe, ok := item.(map[string]any)
+		if !ok || textField(probe, "source") != "retrieve_user_quota_summary" {
+			continue
+		}
+		if probe["ok"] == true {
+			row.Issue = "上游未返回分组额度"
+			return row
+		}
+		row.Issue = "分组额度查询失败"
+		// Only a status is safe to display; transport/probe text may contain
+		// upstream URLs or credential details.
+		if status := number(probe["status"]); status != nil && *status >= 400 && *status < 600 {
+			row.Issue = issueText(fmt.Errorf("HTTP %.0f", *status))
+		}
+	}
+	return row
+}
+
 // zhipuResetPools reads the week and 5h reset cards; the note explains a
 // missing section.
 func zhipuResetPools(usage map[string]any) ([]render.ResetPool, string) {
@@ -437,6 +518,9 @@ func normalizeQuota(item channel, usage map[string]any, usageErr error, credits 
 	case kindGrok:
 		row.Provider = render.ProviderGrok
 		return normalizeGrok(row, usage, usageErr)
+	case kindAntigravity:
+		row.Provider = "Antigravity"
+		return normalizeAntigravity(row, usage, usageErr)
 	default:
 		row.Provider = fmt.Sprintf("类型 %d", item.Type)
 		row.Unsupported = true
@@ -504,6 +588,8 @@ func collectQuotas(ctx context.Context, client *apiClient, includeDisabled bool,
 				usage, usageErr = fetch(item.ID, "zhipu/coding-plan/usage")
 			case kindGrok:
 				usage, usageErr = fetch(item.ID, "grok/usage")
+			case kindAntigravity:
+				usage, usageErr = fetch(item.ID, "antigravity/usage?summary_only=true")
 			}
 			row := normalizeQuota(item, usage, usageErr, credits, creditsErr, float64(time.Now().Unix()))
 			mu.Lock()
