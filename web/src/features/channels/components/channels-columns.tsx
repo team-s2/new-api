@@ -62,9 +62,11 @@ import { truncateText } from '@/lib/utils'
 
 import {
   getCodexUsage,
+  getDevinUsage,
   getGrokUsage,
   getZhipuCodingPlanUsage,
   updateChannelBalance,
+  type DevinUsageResponse,
   type GrokUsageResponse,
   type ZhipuCodingPlanUsageResponse,
 } from '../api'
@@ -73,6 +75,7 @@ import {
   CHANNEL_TYPE_TASK_PLUGIN,
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
+  CHANNEL_TYPE_DEVIN_SUB,
   CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_ANTIGRAVITY_SUB,
   MODEL_FETCHABLE_TYPES,
@@ -109,8 +112,9 @@ import {
   CodexUsageDialog,
   type CodexUsageDialogData,
 } from './dialogs/codex-usage-dialog'
-import { ZhipuCodingPlanUsageDialog } from './dialogs/zhipu-coding-plan-usage-dialog'
+import { DevinUsageDialog } from './dialogs/devin-usage-dialog'
 import { GrokUsageDialog } from './dialogs/grok-usage-dialog'
+import { ZhipuCodingPlanUsageDialog } from './dialogs/zhipu-coding-plan-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
@@ -373,14 +377,22 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const [grokUsageResponse, setGrokUsageResponse] =
     useState<GrokUsageResponse | null>(null)
   const [antigravityUsageOpen, setAntigravityUsageOpen] = useState(false)
+  const [devinUsageOpen, setDevinUsageOpen] = useState(false)
+  const [devinUsageResponse, setDevinUsageResponse] =
+    useState<DevinUsageResponse | null>(null)
   const isZhipuCodingPlanChannel = isZhipuCodingPlan(
     channel.type,
     channel.base_url
   )
   const isGrokSub = channel.type === CHANNEL_TYPE_GROK_SUB
   const isAntigravitySub = channel.type === CHANNEL_TYPE_ANTIGRAVITY_SUB
+  const isDevinSub = channel.type === CHANNEL_TYPE_DEVIN_SUB
   const isAccountInfoChannel =
-    channel.type === 57 || isZhipuCodingPlanChannel || isGrokSub || isAntigravitySub
+    channel.type === 57 ||
+    isZhipuCodingPlanChannel ||
+    isGrokSub ||
+    isAntigravitySub ||
+    isDevinSub
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
@@ -535,6 +547,22 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       return
     }
 
+    if (isDevinSub) {
+      try {
+        const res = await getDevinUsage(channel.id)
+        if (!res.success) {
+          throw createServerError(res, t('Failed to fetch usage'))
+        }
+        setDevinUsageResponse(res)
+        setDevinUsageOpen(true)
+      } catch (error) {
+        handleServerError(error, t('Failed to fetch usage'))
+      } finally {
+        setIsUpdating(false)
+      }
+      return
+    }
+
     try {
       const response = await updateChannelBalance(channel.id)
       if (response.success && response.balance !== undefined) {
@@ -581,6 +609,8 @@ export function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = t('Click to view Grok subscription usage')
   } else if (isAntigravitySub) {
     remainingTooltipLabel = t('Click to view Antigravity subscription usage')
+  } else if (isDevinSub) {
+    remainingTooltipLabel = t('Click to view Devin subscription usage')
   } else if (isInferenceChannel) {
     remainingTooltipLabel = inferenceStatusLabel
   }
@@ -707,6 +737,33 @@ export function BalanceCell({ channel }: { channel: Channel }) {
         open={antigravityUsageOpen}
         onOpenChange={setAntigravityUsageOpen}
         channel={channel}
+      />
+      <DevinUsageDialog
+        open={devinUsageOpen}
+        onOpenChange={setDevinUsageOpen}
+        channelName={channel.name}
+        channelId={channel.id}
+        channelDisplayName={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        channelDisplayId={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        response={devinUsageResponse}
+        onRefresh={async () => {
+          if (isUpdating) {
+            return
+          }
+          setIsUpdating(true)
+          try {
+            const res = await getDevinUsage(channel.id)
+            if (!res.success) {
+              throw createServerError(res, t('Failed to fetch usage'))
+            }
+            setDevinUsageResponse(res)
+          } catch (error) {
+            handleServerError(error, t('Failed to fetch usage'))
+          } finally {
+            setIsUpdating(false)
+          }
+        }}
+        isRefreshing={isUpdating}
       />
       {rawBalanceResponse !== null && (
         <BalanceQueryDialog

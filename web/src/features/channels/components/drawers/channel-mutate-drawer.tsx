@@ -136,6 +136,7 @@ import {
   getTaskPluginOptions,
   refreshAntigravityCredential,
   refreshCodexCredential,
+  refreshDevinCredential,
   refreshGrokCredential,
 } from '../../api'
 import {
@@ -143,6 +144,7 @@ import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_DEVIN_SUB,
   CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_ANTIGRAVITY_SUB,
   CHANNEL_TYPE_OLLAMA,
@@ -224,8 +226,15 @@ import {
   BigModelOAuthControls,
   BigModelOAuthLoginDialog,
 } from '../dialogs/bigmodel-oauth-login-dialog'
-import { GrokOAuthControls, GrokOAuthLoginDialog } from '../dialogs/grok-oauth-login-dialog'
 import { ConfigureModelsDialog } from '../dialogs/configure-models-dialog'
+import {
+  DevinOAuthControls,
+  DevinOAuthLoginDialog,
+} from '../dialogs/devin-oauth-login-dialog'
+import {
+  GrokOAuthControls,
+  GrokOAuthLoginDialog,
+} from '../dialogs/grok-oauth-login-dialog'
 import {
   MissingModelsConfirmationDialog,
   type MissingModelsAction,
@@ -451,6 +460,8 @@ export function ChannelMutateDrawer({
     isAntigravityCredentialRefreshing,
     setIsAntigravityCredentialRefreshing,
   ] = useState(false)
+  const [isDevinCredentialRefreshing, setIsDevinCredentialRefreshing] =
+    useState(false)
   const initialModelsRef = useRef<string[]>([])
   const initialModelMappingRef = useRef<string>('')
   const initialStatusCodeMappingRef = useRef<string>('')
@@ -458,6 +469,7 @@ export function ChannelMutateDrawer({
   const [bigModelOAuthOpen, setBigModelOAuthOpen] = useState(false)
   const [grokOAuthOpen, setGrokOAuthOpen] = useState(false)
   const [antigravityOAuthOpen, setAntigravityOAuthOpen] = useState(false)
+  const [devinOAuthOpen, setDevinOAuthOpen] = useState(false)
   const [statusCodeRiskDetailItems, setStatusCodeRiskDetailItems] = useState<
     string[]
   >([])
@@ -1243,6 +1255,25 @@ export function ChannelMutateDrawer({
       handleServerError(error, t('Refresh failed'))
     } finally {
       setIsAntigravityCredentialRefreshing(false)
+    }
+  }, [channelId, queryClient, t])
+
+  const handleRefreshDevinCredential = useCallback(async () => {
+    if (!channelId) return
+    setIsDevinCredentialRefreshing(true)
+    try {
+      const res = await refreshDevinCredential(channelId)
+      if (!res.success) {
+        throw createServerError(res, t('Failed to refresh credential'))
+      }
+      toast.success(t('Credential refreshed'))
+      queryClient.invalidateQueries({
+        queryKey: channelsQueryKeys.detail(channelId),
+      })
+    } catch (error) {
+      handleServerError(error, t('Refresh failed'))
+    } finally {
+      setIsDevinCredentialRefreshing(false)
     }
   }, [channelId, queryClient, t])
 
@@ -4680,35 +4711,39 @@ export function ChannelMutateDrawer({
                 </div>
               )}
 
-              {currentType === CHANNEL_TYPE_GROK_SUB && isEditing && channelId && (
-                <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
-                  <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
-                    <div className='text-muted-foreground text-xs'>
-                      {t(
-                        'Grok subscription tokens refresh automatically; you can also refresh manually.'
-                      )}
-                    </div>
-                    <div className='flex flex-wrap items-center gap-2'>
-                      <Button
-                        type='button'
-                        variant='outline'
-                        size='sm'
-                        onClick={handleRefreshGrokCredential}
-                        disabled={sensitiveLocked || isGrokCredentialRefreshing}
-                      >
-                        {isGrokCredentialRefreshing ? (
-                          <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                        ) : (
-                          <RefreshCw className='mr-2 h-4 w-4' />
+              {currentType === CHANNEL_TYPE_GROK_SUB &&
+                isEditing &&
+                channelId && (
+                  <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                    <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                      <div className='text-muted-foreground text-xs'>
+                        {t(
+                          'Grok subscription tokens refresh automatically; you can also refresh manually.'
                         )}
-                        {isGrokCredentialRefreshing
-                          ? t('Refreshing...')
-                          : t('Refresh credential')}
-                      </Button>
+                      </div>
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          onClick={handleRefreshGrokCredential}
+                          disabled={
+                            sensitiveLocked || isGrokCredentialRefreshing
+                          }
+                        >
+                          {isGrokCredentialRefreshing ? (
+                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          ) : (
+                            <RefreshCw className='mr-2 h-4 w-4' />
+                          )}
+                          {isGrokCredentialRefreshing
+                            ? t('Refreshing...')
+                            : t('Refresh credential')}
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
               {currentType === CHANNEL_TYPE_ANTIGRAVITY_SUB &&
                 isEditing &&
@@ -4757,6 +4792,45 @@ export function ChannelMutateDrawer({
               <AntigravityOAuthControls
                 channelType={currentType}
                 onLogin={() => setAntigravityOAuthOpen(true)}
+              />
+
+              {currentType === CHANNEL_TYPE_DEVIN_SUB &&
+                isEditing &&
+                channelId && (
+                  <div className='border-border/60 flex flex-col gap-3 border-y py-4'>
+                    <div className='flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between'>
+                      <div className='text-muted-foreground text-xs'>
+                        {t(
+                          'Devin session tokens are not refreshed automatically. Manual refresh requires an API key; OAuth-only credentials require signing in again.'
+                        )}
+                      </div>
+                      <div className='flex flex-wrap items-center gap-2'>
+                        <Button
+                          type='button'
+                          variant='outline'
+                          size='sm'
+                          onClick={handleRefreshDevinCredential}
+                          disabled={
+                            sensitiveLocked || isDevinCredentialRefreshing
+                          }
+                        >
+                          {isDevinCredentialRefreshing ? (
+                            <Loader2 className='mr-2 h-4 w-4 animate-spin' />
+                          ) : (
+                            <RefreshCw className='mr-2 h-4 w-4' />
+                          )}
+                          {isDevinCredentialRefreshing
+                            ? t('Refreshing...')
+                            : t('Refresh credential')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              <DevinOAuthControls
+                channelType={currentType}
+                onLogin={() => setDevinOAuthOpen(true)}
               />
 
               {isEditing && isMultiKeyChannel && (
@@ -5323,6 +5397,14 @@ export function ChannelMutateDrawer({
       <AntigravityOAuthLoginDialog
         open={antigravityOAuthOpen}
         onOpenChange={setAntigravityOAuthOpen}
+        onApply={(credential) =>
+          form.setValue('key', credential, { shouldValidate: true })
+        }
+      />
+
+      <DevinOAuthLoginDialog
+        open={devinOAuthOpen}
+        onOpenChange={setDevinOAuthOpen}
         onApply={(credential) =>
           form.setValue('key', credential, { shouldValidate: true })
         }

@@ -120,15 +120,51 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	var usage = &dto.Usage{}
 	var lastStreamData string
 	var secondLastStreamData string // 保留倒数第二个stream data；部分兼容网关把完整usage放在倒数第二个事件
+	var upstreamFailure *types.NewAPIError
 	seenStreamToolCalls := make(map[string]struct{})
 	var streamFunctionCallNames []string
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
-		if lastStreamData != "" {
-			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
+		if info.ChannelType == constant.ChannelTypeDevinSub && strings.Contains(data, `"error"`) {
+			var errorResponse dto.SimpleResponse
+			if err := common.UnmarshalJsonStr(data, &errorResponse); err == nil {
+				if oaiError := errorResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+					upstreamFailure = types.WithOpenAIError(*oaiError, http.StatusBadGateway, types.ErrOptionWithSkipRetry())
+				}
+			}
+		}
+		pendingData := lastStreamData
+		if upstreamFailure != nil && pendingData != "" {
+			// Keep the pending usage for settlement, but do not convert it or
+			// a finish reason into a successful terminal before the error.
+			var pendingChunk dto.ChatCompletionsStreamResponse
+			if err := common.UnmarshalJsonStr(pendingData, &pendingChunk); err == nil {
+				if info.RelayFormat == types.RelayFormatClaude || !info.ShouldIncludeUsage {
+					pendingChunk.Usage = nil
+				}
+				hasOutput := pendingChunk.Usage != nil
+				for i := range pendingChunk.Choices {
+					pendingChunk.Choices[i].FinishReason = nil
+					delta := &pendingChunk.Choices[i].Delta
+					hasOutput = hasOutput || delta.GetContentString() != "" || delta.GetReasoningContent() != "" || len(delta.ToolCalls) > 0
+				}
+				pendingData = ""
+				if hasOutput {
+					if encoded, err := common.Marshal(pendingChunk); err == nil {
+						pendingData = string(encoded)
+					}
+				}
+			}
+		}
+		if pendingData != "" {
+			if err := HandleStreamFormat(c, info, pendingData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog(common.LogText("error handling stream format: %s", err.Error()))
 				sr.Error(err)
 			}
+		}
+		if upstreamFailure != nil {
+			sr.Stop(upstreamFailure)
+			return
 		}
 		if len(data) > 0 {
 			if lastStreamData != "" {
@@ -145,6 +181,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	})
 
 	info.StreamStatus.RequireTerminal()
+	if upstreamFailure != nil && lastStreamData == "" {
+		return nil, upstreamFailure
+	}
 
 	// 处理最后的响应
 	shouldSendLastResp := true
@@ -176,12 +215,16 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		}
 	}
 
-	if info.RelayFormat == types.RelayFormatOpenAI {
+	if upstreamFailure == nil && info.RelayFormat == types.RelayFormatOpenAI {
 		if shouldSendLastResp {
 			_ = sendStreamData(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent)
 		}
 	}
 
+	if upstreamFailure != nil && !containStreamUsage && responseTextBuilder.Len() == 0 && toolCount == 0 {
+		// Let the relay controller emit the error once and refund the request.
+		return nil, upstreamFailure
+	}
 	if !containStreamUsage {
 		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		usage.CompletionTokens += toolCount * 7
@@ -193,6 +236,17 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		info.CountBillableToolCall(dto.BuildInCallFunctionCall, name)
 	}
 
+	if upstreamFailure != nil {
+		// Partial output still settles, but the client must see the upstream
+		// failure rather than a synthesized successful terminal event.
+		upstreamURLs := common.UpstreamAddresses(c)
+		if info.RelayFormat == types.RelayFormatClaude {
+			_ = helper.ClaudeData(c, dto.ClaudeResponse{Type: "error", Error: upstreamFailure.ToClaudeError(upstreamURLs...)})
+		} else {
+			_ = helper.ObjectData(c, gin.H{"error": upstreamFailure.ToOpenAIError(upstreamURLs...)})
+		}
+		return usage, nil
+	}
 	HandleFinalResponse(c, info, lastStreamData, responseId, createAt, model, systemFingerprint, usage, containStreamUsage)
 
 	return usage, nil

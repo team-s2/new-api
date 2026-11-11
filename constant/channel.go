@@ -71,6 +71,7 @@ const (
 	ChannelTypeBigModelSub    = 100
 	ChannelTypeGrokSub        = 101
 	ChannelTypeAntigravitySub = 102
+	ChannelTypeDevinSub       = 103
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -182,6 +183,7 @@ var ChannelBaseURLs = []string{
 	"zcode-ultra",                               //100
 	"https://cli-chat-proxy.grok.com/v1",        //101
 	"https://daily-cloudcode-pa.googleapis.com", //102
+	"https://server.codeium.com",                //103
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -255,6 +257,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeBigModelSub:    "BigModel Subscription (Coding Plan)",
 	ChannelTypeGrokSub:        "Grok Subscription",
 	ChannelTypeAntigravitySub: "Antigravity Subscription",
+	ChannelTypeDevinSub:       "Devin Subscription",
 }
 
 func GetChannelTypeName(channelType int) string {

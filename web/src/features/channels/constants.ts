@@ -44,6 +44,8 @@ export const CHANNEL_TYPE_GROK_SUB = 101
 
 export const CHANNEL_TYPE_ANTIGRAVITY_SUB = 102
 
+export const CHANNEL_TYPE_DEVIN_SUB = 103
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -108,6 +110,7 @@ export const CHANNEL_TYPES = {
   [CHANNEL_TYPE_BIGMODEL_SUB]: 'BigModel Subscription (Coding Plan)',
   [CHANNEL_TYPE_GROK_SUB]: 'Grok Subscription',
   [CHANNEL_TYPE_ANTIGRAVITY_SUB]: 'Antigravity Subscription',
+  [CHANNEL_TYPE_DEVIN_SUB]: 'Devin Subscription',
 } as const
 
 export type ChannelProviderPresentation = {
@@ -196,7 +199,12 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
       'Access BigModel Coding Plan models through OAuth credentials',
   },
   [CHANNEL_TYPE_GROK_SUB]: {
-    descriptionKey: 'Access Grok models through Grok subscription OAuth credentials',
+    descriptionKey:
+      'Access Grok models through Grok subscription OAuth credentials',
+  },
+  [CHANNEL_TYPE_DEVIN_SUB]: {
+    descriptionKey:
+      'Access SWE-2 models through Devin subscription OAuth credentials',
   },
   [CHANNEL_TYPE_ANTIGRAVITY_SUB]: {
     descriptionKey:
@@ -210,9 +218,7 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
 const CHANNEL_TYPE_DISPLAY_ORDER: number[] = [
   1, 14, 24, 33, 43, 3, 41, 17, 45, 25, 26, 23, 48, 60, 58, 59, 61, 42, 34, 20,
   4, 62, 40, 27, 15, 46, 18, 31, 35, 49, 19, 47, 37, 38, 39, 11, 8, 57, 100,
-  101, 102, 22,
-  21,
-  44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
+  101, 102, 103, 22, 21, 44, 2, 5, 36, 50, 51, 52, 53, 54, 55, 56,
 ]
 
 export const CHANNEL_TYPE_OPTIONS: { value: number; label: string }[] = (() => {
@@ -550,6 +556,7 @@ export const MODEL_FETCHABLE_TYPES = new Set([
   CHANNEL_TYPE_BIGMODEL_SUB,
   CHANNEL_TYPE_GROK_SUB,
   CHANNEL_TYPE_ANTIGRAVITY_SUB,
+  CHANNEL_TYPE_DEVIN_SUB,
 ])
 
 export const FIELD_PASSTHROUGH_TYPES = new Set([
