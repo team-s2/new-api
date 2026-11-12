@@ -338,6 +338,7 @@ func normalizeOpenCodeGo(row render.QuotaRow, usage map[string]any, usageErr err
 	row.FiveHour = openCodeGoWindow(rolling, fiveHourSeconds)
 	row.Weekly = openCodeGoWindow(weekly, weekSeconds)
 	row.Monthly = openCodeGoWindow(monthly, monthSeconds)
+	row.MonthlyPace = true
 	for _, window := range []map[string]any{rolling, weekly, monthly} {
 		if textField(window, "status") == "rate-limited" {
 			row.LimitNote = "上游当前限流"

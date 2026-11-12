@@ -130,6 +130,9 @@ type QuotaRow struct {
 	Unsupported bool
 	LimitNote   string
 	Groups      []string
+	// MonthlyPace replaces the text-only monthly cell with a progress bar and
+	// a steady-pace marker. Grok keeps the text-only layout.
+	MonthlyPace bool
 }
 
 // VersionLabel returns the provider and plan label shown under a channel name.
@@ -427,9 +430,13 @@ func poolLabel(pool ResetPool) string {
 	return ""
 }
 
-// drawMonthlyCell shows Grok's monthly allowance: remaining share, then spend
-// and countdown.
-func drawMonthlyCell(p painter, cy float64, row *QuotaRow, now float64) {
+// drawMonthlyCell shows a monthly allowance. Grok uses the text-only layout;
+// OpenCode Go uses a progress bar with a steady-pace marker.
+func drawMonthlyCell(p painter, cy float64, row *QuotaRow, a axis, now float64) {
+	if row.MonthlyPace {
+		drawMonthlyPaceCell(p, cy, row, a, now)
+		return
+	}
 	window := row.Monthly
 	if window == nil {
 		note, color := "—", muted
@@ -468,6 +475,84 @@ func drawMonthlyCell(p painter, cy float64, row *QuotaRow, now float64) {
 	if len(parts) > 0 {
 		line := p.fit(strings.Join(parts, " · "), right-cardLabel, 11, Regular)
 		p.text(cardLabel, cy+9, line, 11, sub, Regular, alignLeft)
+	}
+}
+
+// drawMonthlyPaceCell draws OpenCode Go's monthly allowance in the same
+// one-line shape as the weekly and 5h windows: value cell on the left, bar on
+// the right. The bar starts just right of the now line, the dark part is the
+// used share, the orange tick marks the share a steady burn would have reached
+// by now, and usage beyond that tick is red.
+func drawMonthlyPaceCell(p painter, cy float64, row *QuotaRow, a axis, now float64) {
+	window := row.Monthly
+	if window == nil {
+		note, color := "—", muted
+		if row.ResetNote != "" {
+			note, color = row.ResetNote, over
+		}
+		p.text(cardLabel, cy, p.fit(note, right-cardLabel, 12, Regular), 12, color, Regular, alignLeft)
+		return
+	}
+
+	nowX := a.clamp(a.x(now))
+	valueRight := nowX - 8
+	if window.UsedPercent == nil {
+		p.text(valueRight, cy-11, "?", 14, muted, Bold, alignRight)
+	} else {
+		remaining := max(0, 100-*window.UsedPercent)
+		color := ink
+		if remaining < 10 {
+			color = over
+		}
+		p.text(valueRight, cy-11, percentText(remaining), 14, color, Bold, alignRight)
+	}
+	countdown := ""
+	if window.ResetAt != nil {
+		if *window.ResetAt > now {
+			countdown = durationText(*window.ResetAt - now)
+		} else {
+			countdown = "待刷新"
+		}
+	}
+	detail := "月"
+	if countdown != "" {
+		detail += " · " + countdown
+	}
+	p.text(valueRight, cy+10, p.fit(detail, valueRight-cardLabel, 11, Regular), 11, sub, Regular, alignRight)
+
+	x0, x1 := nowX+4, right-12
+	if x1-x0 < 1 {
+		return
+	}
+	top, bottom := cy-barHeight/2, cy+barHeight/2
+	radius := barHeight / 2
+	p.rect(x0, top, x1, bottom, cardLane, radius)
+	if window.UsedPercent == nil {
+		return
+	}
+
+	width := x1 - x0
+	used := min(100, max(0, *window.UsedPercent))
+	usedX := x0 + width*used/100
+
+	pace, hasPace := 100.0, false
+	if window.ResetAt != nil && window.Duration > 0 {
+		start := *window.ResetAt - window.Duration
+		pace = min(100, max(0, (now-start)/window.Duration*100))
+		hasPace = true
+	}
+	paceX := x0 + width*pace/100
+
+	if usedX > x0 {
+		p.ClipRRect(x0, top, x1, bottom, radius)
+		p.rect(x0, top, min(usedX, paceX), bottom, card, 0)
+		if usedX > paceX {
+			p.rect(paceX, top, usedX, bottom, over, 0)
+		}
+		p.Restore()
+	}
+	if hasPace {
+		p.line(paceX, top-4, paceX, bottom+4, nowColor, 2)
 	}
 }
 
@@ -697,7 +782,7 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 			p.text(x0+12, y+rowHeight/2, issue, 13, over, Regular, alignLeft)
 		} else if row.Monthly != nil {
 			blankRowCells(p, cardLabel-6, y, rowsBottom)
-			drawMonthlyCell(p, y+rowHeight/2, row, now)
+			drawMonthlyCell(p, y+rowHeight/2, row, cardScale, now)
 		}
 		y += rowHeight
 	}
