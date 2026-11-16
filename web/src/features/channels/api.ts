@@ -710,6 +710,24 @@ export interface AntigravityModelQuota {
   reset_time?: string
 }
 
+export interface AntigravityQuotaBucket {
+  bucket_id?: string
+  display_name?: string
+  window?: string
+  remaining_fraction?: number
+  reset_time?: string
+  description?: string
+  disabled?: boolean
+}
+
+export interface AntigravityQuotaGroup {
+  /** Stable semantic allowance: gemini, claude+gpt, or the standalone Argon one. */
+  group_key?: string
+  display_name?: string
+  description?: string
+  buckets?: AntigravityQuotaBucket[]
+}
+
 export interface AntigravityProbeStatus {
   source: string
   path: string
@@ -727,6 +745,7 @@ export interface AntigravityUsageResult {
   paid_tier_name?: string
   credits?: AntigravityCreditStatus[]
   models?: AntigravityModelQuota[]
+  quota_groups?: AntigravityQuotaGroup[]
   probes: AntigravityProbeStatus[]
   fetched_at: string
 }
