@@ -67,6 +67,11 @@ type AntigravityModelQuota struct {
 }
 
 type AntigravityQuotaGroup struct {
+	// GroupKey is the stable semantic bucket this group belongs to: the upstream
+	// display name changes across plans and client versions, while the key lets
+	// the console and the QQ renderer keep Gemini, Claude+GPT and the separate
+	// Gemini 4 Argon allowance apart.
+	GroupKey    string                   `json:"group_key,omitempty"`
 	DisplayName string                   `json:"display_name,omitempty"`
 	Description string                   `json:"description,omitempty"`
 	Buckets     []AntigravityQuotaBucket `json:"buckets,omitempty"`
@@ -228,26 +233,28 @@ func fetchAntigravityUsage(ctx context.Context, baseURL, rawKey, proxyURL string
 		return nil, err
 	}
 
+	// The native groups are the authoritative quota source: they already separate
+	// the Gemini pool (Gemini 4 Hydrogen and the Flash models share it), the
+	// Claude/GPT pool and the standalone Argon allowance, each with its own
+	// windows. Both the console and the QQ card read them from here.
+	summaryPayload := map[string]any{}
+	if out.ProjectID != "" {
+		summaryPayload["project"] = out.ProjectID
+	}
+	summaryCtx, cancelSummary := context.WithTimeout(ctx, 15*time.Second)
+	for _, candidateBase := range ResolveAntigravityBaseURLs(baseURL) {
+		if summaryCtx.Err() != nil {
+			break
+		}
+		probe, groups := probeAntigravityQuotaSummary(summaryCtx, client, candidateBase+"/v1internal:retrieveUserQuotaSummary", accessToken, summaryPayload)
+		out.Probes = append(out.Probes, probe)
+		if probe.OK {
+			out.QuotaGroups = groups
+			break
+		}
+	}
+	cancelSummary()
 	if summaryOnly {
-		// The native groups are authoritative. Never fill missing groups or windows
-		// from a different endpoint or from the legacy per-model fractions.
-		summaryPayload := map[string]any{}
-		if out.ProjectID != "" {
-			summaryPayload["project"] = out.ProjectID
-		}
-		summaryCtx, cancelSummary := context.WithTimeout(ctx, 15*time.Second)
-		for _, candidateBase := range ResolveAntigravityBaseURLs(baseURL) {
-			if summaryCtx.Err() != nil {
-				break
-			}
-			probe, groups := probeAntigravityQuotaSummary(summaryCtx, client, candidateBase+"/v1internal:retrieveUserQuotaSummary", accessToken, summaryPayload)
-			out.Probes = append(out.Probes, probe)
-			if probe.OK {
-				out.QuotaGroups = groups
-				break
-			}
-		}
-		cancelSummary()
 		return out, nil
 	}
 
@@ -358,7 +365,7 @@ func probeAntigravityQuotaSummary(ctx context.Context, client *http.Client, endp
 		groups = append(groups, entry)
 	}
 	probe.OK = true
-	return probe, groups
+	return probe, normalizeAntigravityGroupKeys(groups)
 }
 
 // probeAntigravityUsageEndpoint calls one usage source and reports its outcome
@@ -423,51 +430,292 @@ func applyAntigravityLoadCodeAssistUsage(out *AntigravityUsageResult, body []byt
 	}
 }
 
+// Antigravity reports quota as display-named groups whose names change with the
+// plan and the client version ("Gemini Models", "Claude and GPT models", and,
+// since the Gemini 4 Argon rollout, a third "Gemini 4 Argon" group). The console
+// and the QQ renderer need a stable identity per allowance, so every group is
+// mapped onto one of these keys.
+const (
+	antigravityGroupGemini = "antigravity-gemini-models"
+	antigravityGroupClaude = "antigravity-claude-and-gpt-models"
+	// antigravityGroupArgon is the standalone weekly Gemini 4 Argon allowance.
+	// It must never be folded into the Gemini group: Argon has its own window and
+	// drains independently.
+	antigravityGroupArgon = "antigravity-gemini-4-argon"
+	// antigravityArgonWeeklyBucketID identifies the Argon allowance even when the
+	// upstream renames the group.
+	antigravityArgonWeeklyBucketID = "gemini-argon-wtu-weekly"
+	// antigravityArgonModelPrefix marks the per-model Argon entries, which carry
+	// the standalone allowance rather than the shared Gemini pool.
+	antigravityArgonModelPrefix  = "gemini-4-argon"
+	antigravityGeminiAPIProvider = "API_PROVIDER_GOOGLE_GEMINI"
+)
+
+// antigravityGroupKeyFor maps a group display name to its stable key. The exact
+// "Gemini 4 Argon" name is matched before the generic Gemini test so the Argon
+// allowance keeps its own card.
+func antigravityGroupKeyFor(displayName string) string {
+	words := strings.FieldsFunc(strings.ToLower(strings.TrimSpace(displayName)), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9')
+	})
+	if strings.Join(words, " ") == "gemini 4 argon" || strings.Join(words, " ") == "gemini argon" {
+		return antigravityGroupArgon
+	}
+
+	hasGemini, hasClaude, hasGPT := false, false, false
+	for _, word := range words {
+		switch word {
+		case "gemini":
+			hasGemini = true
+		case "claude":
+			hasClaude = true
+		case "gpt":
+			hasGPT = true
+		}
+	}
+	switch {
+	case hasGemini && !hasClaude && !hasGPT:
+		return antigravityGroupGemini
+	case hasClaude && !hasGemini:
+		return antigravityGroupClaude
+	case hasGPT && !hasGemini:
+		return antigravityGroupClaude
+	default:
+		return ""
+	}
+}
+
+// antigravityGroupKeyForBuckets identifies a group's allowance. The bucket id is
+// checked first because it is harder for the upstream to rename than the display
+// name, and Argon must stay separate even if a plan relabels its group.
+func antigravityGroupKeyForBuckets(group AntigravityQuotaGroup) string {
+	for _, bucket := range group.Buckets {
+		if strings.EqualFold(strings.TrimSpace(bucket.BucketID), antigravityArgonWeeklyBucketID) {
+			return antigravityGroupArgon
+		}
+	}
+	return antigravityGroupKeyFor(group.DisplayName)
+}
+
+// normalizeAntigravityGroupKeys stamps the semantic key on every group. Groups
+// that cannot be identified keep an empty key and are rendered as reported.
+func normalizeAntigravityGroupKeys(groups []AntigravityQuotaGroup) []AntigravityQuotaGroup {
+	for i := range groups {
+		groups[i].GroupKey = antigravityGroupKeyForBuckets(groups[i])
+	}
+	return groups
+}
+
+// antigravityModelEntry is one per-model quota row from either upstream shape,
+// before it is pinned into the display list and aggregated into the Gemini group.
+type antigravityModelEntry struct {
+	id        string
+	display   string
+	provider  string
+	remaining *float64
+	resetTime string
+}
+
 func applyAntigravityModelsQuota(out *AntigravityUsageResult, body []byte) {
+	// retrieveUserQuota answers with a bucket array instead of the fetchAvailableModels
+	// map; both carry the same per-model quota fields.
 	var parsed struct {
 		Models map[string]struct {
 			DisplayName string `json:"displayName"`
+			APIProvider string `json:"apiProvider"`
 			QuotaInfo   *struct {
 				RemainingFraction *float64 `json:"remainingFraction"`
 				ResetTime         string   `json:"resetTime"`
 			} `json:"quotaInfo"`
 		} `json:"models"`
+		Buckets []struct {
+			ModelID           string   `json:"modelId"`
+			RemainingFraction *float64 `json:"remainingFraction"`
+			ResetTime         string   `json:"resetTime"`
+		} `json:"buckets"`
 	}
-	if err := common.Unmarshal(body, &parsed); err != nil || len(parsed.Models) == 0 {
+	if err := common.Unmarshal(body, &parsed); err != nil {
 		return
 	}
 
-	quotas := make([]AntigravityModelQuota, 0, len(parsed.Models))
+	entries := make([]antigravityModelEntry, 0, len(parsed.Models)+len(parsed.Buckets))
 	for modelID, info := range parsed.Models {
 		modelID = strings.TrimSpace(modelID)
 		if modelID == "" {
 			continue
 		}
-		entry := AntigravityModelQuota{
-			Model:       modelID,
-			DisplayName: strings.TrimSpace(info.DisplayName),
+		entry := antigravityModelEntry{
+			id:       modelID,
+			display:  strings.TrimSpace(info.DisplayName),
+			provider: strings.TrimSpace(info.APIProvider),
 		}
 		if info.QuotaInfo != nil {
-			entry.ResetTime = strings.TrimSpace(info.QuotaInfo.ResetTime)
-			if info.QuotaInfo.RemainingFraction != nil {
-				frac := *info.QuotaInfo.RemainingFraction
-				if frac < 0 {
-					frac = 0
-				} else if frac > 1 {
-					frac = 1
-				}
-				remPct := math.Round(frac*1000) / 10
-				usedPct := math.Round((1-frac)*1000) / 10
-				entry.RemainingFraction = &frac
-				entry.RemainingPercent = &remPct
-				entry.UsedPercent = &usedPct
-			}
+			entry.resetTime = strings.TrimSpace(info.QuotaInfo.ResetTime)
+			entry.remaining = info.QuotaInfo.RemainingFraction
 		}
-		quotas = append(quotas, entry)
+		// fetchAvailableModels omits remainingFraction for an exhausted model while
+		// retrieveUserQuota reports an explicit 0; treat a reset time without a
+		// fraction as exhausted so a drained allowance stays visible.
+		if entry.remaining == nil && entry.resetTime != "" {
+			zero := 0.0
+			entry.remaining = &zero
+		}
+		entries = append(entries, entry)
+	}
+	for _, bucket := range parsed.Buckets {
+		modelID := strings.TrimSpace(bucket.ModelID)
+		if modelID == "" {
+			continue
+		}
+		entries = append(entries, antigravityModelEntry{
+			id:        modelID,
+			display:   modelID,
+			provider:  antigravityAPIProviderForModel(modelID),
+			remaining: bucket.RemainingFraction,
+			resetTime: strings.TrimSpace(bucket.ResetTime),
+		})
+	}
+	if len(entries) == 0 {
+		return
+	}
+
+	quotas := make([]AntigravityModelQuota, 0, len(entries))
+	for _, entry := range entries {
+		quota := AntigravityModelQuota{Model: entry.id, DisplayName: entry.display, ResetTime: entry.resetTime}
+		if entry.remaining != nil {
+			frac := min(max(*entry.remaining, 0), 1)
+			remPct := math.Round(frac*1000) / 10
+			usedPct := math.Round((1-frac)*1000) / 10
+			quota.RemainingFraction = &frac
+			quota.RemainingPercent = &remPct
+			quota.UsedPercent = &usedPct
+		}
+		quotas = append(quotas, quota)
 	}
 
 	slices.SortFunc(quotas, func(a, b AntigravityModelQuota) int {
 		return strings.Compare(a.Model, b.Model)
 	})
 	out.Models = quotas
+	// The native groups already separate the three allowances. Aggregating the
+	// per-model quota on top of them would add a second Gemini card whose weekly
+	// window mixes in the Argon models, so this stays a fallback for responses
+	// that carry no Gemini group.
+	fallback := antigravityModelGroup(entries)
+	if fallback.GroupKey == "" || slices.ContainsFunc(out.QuotaGroups, func(group AntigravityQuotaGroup) bool {
+		return group.GroupKey == fallback.GroupKey
+	}) {
+		return
+	}
+	out.QuotaGroups = append(out.QuotaGroups, fallback)
+}
+
+// antigravityModelGroup aggregates the per-model quotas into the Gemini group.
+// The summary endpoint only reports the Claude/GPT allowance on older clients, so
+// this is the fallback that keeps the Gemini windows on the console. Each window
+// is bucketed by how far its reset time is from the earliest one: the upstream
+// exposes a single reset time per window, five hours apart from the weekly one.
+// Argon models are left out because their allowance is a group of its own.
+func antigravityModelGroup(entries []antigravityModelEntry) AntigravityQuotaGroup {
+	gemini := make([]antigravityModelEntry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.provider != antigravityGeminiAPIProvider || entry.remaining == nil || entry.resetTime == "" {
+			continue
+		}
+		if strings.HasPrefix(entry.id, antigravityArgonModelPrefix) {
+			continue
+		}
+		gemini = append(gemini, entry)
+	}
+	if len(gemini) == 0 {
+		return AntigravityQuotaGroup{}
+	}
+
+	earliest := gemini[0].resetTime
+	for _, entry := range gemini {
+		if entry.resetTime < earliest {
+			earliest = entry.resetTime
+		}
+	}
+
+	type windowBucket struct {
+		remaining *float64
+		resetTime string
+		models    []string
+	}
+	buckets := map[string]*windowBucket{}
+	for _, entry := range gemini {
+		window := "5h"
+		if !antigravitySameQuotaWindow(earliest, entry.resetTime) {
+			window = "weekly"
+		}
+		bucket, ok := buckets[window]
+		if !ok {
+			bucket = &windowBucket{}
+			buckets[window] = bucket
+		}
+		if entry.display != "" {
+			bucket.models = append(bucket.models, entry.display)
+		}
+		// The tightest remaining fraction in the window is the real constraint.
+		if bucket.remaining == nil || *entry.remaining < *bucket.remaining {
+			bucket.remaining = entry.remaining
+			bucket.resetTime = entry.resetTime
+		}
+	}
+
+	group := AntigravityQuotaGroup{
+		GroupKey:    antigravityGroupGemini,
+		DisplayName: "Gemini models",
+	}
+	for _, window := range []string{"5h", "weekly"} {
+		bucket, ok := buckets[window]
+		if !ok || bucket.remaining == nil {
+			continue
+		}
+		label := "5h"
+		if window == "weekly" {
+			label = "Weekly"
+		}
+		group.Buckets = append(group.Buckets, AntigravityQuotaBucket{
+			BucketID:          "models-" + window,
+			DisplayName:       label,
+			Window:            window,
+			RemainingFraction: bucket.remaining,
+			ResetTime:         bucket.resetTime,
+		})
+	}
+	return group
+}
+
+// antigravitySameQuotaWindow reports whether two reset times belong to the same
+// window: the five-hour window never exceeds five hours while the weekly one is
+// at least a day away, so a 24-hour split separates them without guessing.
+func antigravitySameQuotaWindow(earliest, candidate string) bool {
+	earliestTime, err := time.Parse(time.RFC3339, earliest)
+	if err != nil {
+		return true
+	}
+	candidateTime, err := time.Parse(time.RFC3339, candidate)
+	if err != nil {
+		return true
+	}
+	diff := candidateTime.Sub(earliestTime)
+	if diff < 0 {
+		diff = -diff
+	}
+	return diff < 24*time.Hour
+}
+
+// antigravityAPIProviderForModel infers the provider of a retrieveUserQuota
+// bucket, which carries no apiProvider field.
+func antigravityAPIProviderForModel(modelID string) string {
+	switch {
+	case strings.HasPrefix(modelID, "gemini-"):
+		return antigravityGeminiAPIProvider
+	case strings.HasPrefix(modelID, "claude-"), strings.HasPrefix(modelID, "gpt-"):
+		return "API_PROVIDER_ANTHROPIC"
+	default:
+		return ""
+	}
 }

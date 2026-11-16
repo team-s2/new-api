@@ -379,8 +379,55 @@ func normalizeGrok(row render.QuotaRow, usage map[string]any, usageErr error) re
 	return row
 }
 
-// normalizeAntigravity displays the two shared model groups and their explicit
-// 5h/weekly buckets. Legacy per-model values cannot identify both windows.
+// antigravityBucketSlots are the quota windows the QQ card shows for an
+// Antigravity credential: the Gemini allowance, the Claude/GPT allowance, and —
+// since the Gemini 4 Argon rollout — the standalone Argon allowance, which has
+// only a weekly window. The slot id doubles as the fallback bucket id older
+// responses used, so both shapes keep rendering.
+var antigravityBucketSlots = []render.QuotaBucket{
+	{ID: "gemini-5h", Name: "Gemini · 5h"},
+	{ID: "gemini-weekly", Name: "Gemini · 周"},
+	{ID: "3p-5h", Name: "Claude/GPT · 5h"},
+	{ID: "3p-weekly", Name: "Claude/GPT · 周"},
+	{ID: "argon-weekly", Name: "Argon · 周"},
+}
+
+// antigravitySlotForBucket maps an upstream group/bucket pair onto a slot id.
+// group_key is preferred because the display names and bucket ids change with the
+// plan and the client version; the older bucket-id match stays as a fallback.
+func antigravitySlotForBucket(group map[string]any, bucket map[string]any) string {
+	window := strings.ToLower(strings.TrimSpace(textField(bucket, "window")))
+	switch textField(group, "group_key") {
+	case "antigravity-gemini-4-argon":
+		return "argon-weekly"
+	case "antigravity-gemini-models":
+		if window == "weekly" {
+			return "gemini-weekly"
+		}
+		return "gemini-5h"
+	case "antigravity-claude-and-gpt-models":
+		if window == "weekly" {
+			return "3p-weekly"
+		}
+		return "3p-5h"
+	}
+
+	bucketID := textField(bucket, "bucket_id")
+	switch {
+	case bucketID == "gemini-argon-wtu-weekly":
+		return "argon-weekly"
+	case bucketID == "models-weekly":
+		return "gemini-weekly"
+	case bucketID == "models-5h":
+		return "gemini-5h"
+	default:
+		return bucketID
+	}
+}
+
+// normalizeAntigravity displays the shared model groups and their explicit
+// 5h/weekly buckets, keeping the standalone Argon allowance apart from Gemini.
+// Legacy per-model values cannot identify both windows.
 func normalizeAntigravity(row render.QuotaRow, payload map[string]any, usageErr error) render.QuotaRow {
 	if usageErr != nil {
 		row.Issue = issueText(usageErr)
@@ -395,12 +442,7 @@ func normalizeAntigravity(row render.QuotaRow, payload map[string]any, usageErr 
 	if row.Plan == "" {
 		row.Plan = strings.TrimSpace(textField(objectField(payload, "credential"), "plan_tier"))
 	}
-	row.QuotaBuckets = []render.QuotaBucket{
-		{ID: "gemini-5h", Name: "Gemini · 5h"},
-		{ID: "gemini-weekly", Name: "Gemini · 周"},
-		{ID: "3p-5h", Name: "Claude/GPT · 5h"},
-		{ID: "3p-weekly", Name: "Claude/GPT · 周"},
-	}
+	row.QuotaBuckets = slices.Clone(antigravityBucketSlots)
 	found := false
 	seen := make([]bool, len(row.QuotaBuckets))
 	groups, _ := usage["quota_groups"].([]any)
@@ -409,16 +451,9 @@ func normalizeAntigravity(row render.QuotaRow, payload map[string]any, usageErr 
 		buckets, _ := group["buckets"].([]any)
 		for _, item := range buckets {
 			bucket, _ := item.(map[string]any)
-			id := textField(bucket, "bucket_id")
-			index := slices.IndexFunc(row.QuotaBuckets, func(value render.QuotaBucket) bool { return value.ID == id })
-			if index < 0 {
-				continue
-			}
-			window := textField(bucket, "window")
-			if window != "" && !strings.HasSuffix(id, "-"+window) {
-				continue
-			}
-			if seen[index] {
+			slot := antigravitySlotForBucket(group, bucket)
+			index := slices.IndexFunc(row.QuotaBuckets, func(value render.QuotaBucket) bool { return value.ID == slot })
+			if index < 0 || seen[index] {
 				continue
 			}
 			seen[index] = true
@@ -433,6 +468,15 @@ func normalizeAntigravity(row render.QuotaRow, payload map[string]any, usageErr 
 		}
 	}
 	if found {
+		// Drop the placeholder windows this credential does not report (an account
+		// without Argon must not show an empty Argon card).
+		kept := row.QuotaBuckets[:0]
+		for i, bucket := range row.QuotaBuckets {
+			if seen[i] {
+				kept = append(kept, bucket)
+			}
+		}
+		row.QuotaBuckets = kept
 		return row
 	}
 	row.QuotaBuckets = nil
