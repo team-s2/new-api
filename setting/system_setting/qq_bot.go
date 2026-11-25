@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/config"
@@ -13,25 +14,22 @@ import (
 const (
 	// QQBotOptionPrefix starts every persisted QQ bot option key.
 	QQBotOptionPrefix = "qq_bot."
-
-	qqBotMinSecretLength = 16
 )
 
 // QQBotFlowStageOrder is the order flow stages are always drawn in.
 var QQBotFlowStageOrder = []string{"user", "node", "token", "group", "model", "channel"}
 
-// QQBotSettings configures the built-in OneBot 11 bot. The ws_secret key ends
-// in "secret" so GetOptions never returns it to the web console.
+// QQBotSettings configures the built-in QQ official bot. The app_secret key
+// ends in "secret" so GetOptions never returns it to the web console.
 type QQBotSettings struct {
-	Enabled bool   `json:"enabled"`
-	SelfID  string `json:"self_id"`
-	Secret  string `json:"ws_secret"`
+	Enabled   bool   `json:"enabled"`
+	AppID     string `json:"app_id"`
+	AppSecret string `json:"app_secret"`
 	// UserID is the new-api user that channel changes are audited under.
 	UserID int `json:"user_id"`
-	// CommandPrefix is the command word; messages wake the bot as /<prefix>.
-	CommandPrefix string `json:"command_prefix"`
-	// Sessions binds chats to the bot, one per line: group:<id> or private:<id>,
+	// Sessions binds QQ groups to the bot, one per line: group:<group openid>,
 	// optionally followed by =<new-api group> to limit the chat to that group.
+	// The bot's id command prints a group's line.
 	Sessions string `json:"sessions"`
 	// HiddenGroups lists groups the quota image shows no tag for.
 	HiddenGroups   string `json:"hidden_groups"`
@@ -45,7 +43,6 @@ type QQBotSettings struct {
 
 var qqBotSettings = QQBotSettings{
 	UserID:         1,
-	CommandPrefix:  "newapi",
 	FlowStages:     "user,model,channel",
 	FlowHours:      24,
 	FlowTopN:       20,
@@ -95,8 +92,10 @@ func (s *QQBotSettings) OrderedFlowStages() []string {
 }
 
 var (
-	qqBotSessionPattern = regexp.MustCompile(`^(group|private):[1-9][0-9]*$`)
-	qqBotPrefixPattern  = regexp.MustCompile(`^[^\s/]{1,32}$`)
+	// QQ openids are opaque; the pattern only keeps a line from carrying
+	// separators or path characters into an OpenAPI URL.
+	qqBotSessionPattern = regexp.MustCompile(`^group:[0-9A-Za-z_-]{1,128}$`)
+	qqBotAppIDPattern   = regexp.MustCompile(`^[1-9][0-9]*$`)
 )
 
 // ParseQQBotSessions maps each bound session to its group filter, which is
@@ -127,20 +126,16 @@ func ParseQQBotSessions(raw string) (map[string]string, error) {
 func ValidateQQBotOption(key, value string) error {
 	switch strings.TrimPrefix(key, QQBotOptionPrefix) {
 	case "enabled":
-		if value == "true" && (qqBotSettings.SelfID == "" || qqBotSettings.Secret == "") {
-			return common.NewMessage("Cannot enable the QQ bot. Enter the bot QQ number and connection secret first.")
+		if value == "true" && (qqBotSettings.AppID == "" || qqBotSettings.AppSecret == "") {
+			return common.NewMessage("Cannot enable the QQ bot. Enter the AppID and AppSecret first.")
 		}
-	case "self_id":
-		if !regexp.MustCompile(`^[1-9][0-9]*$`).MatchString(value) {
-			return common.NewMessage("The bot QQ number must be a positive integer")
+	case "app_id":
+		if !qqBotAppIDPattern.MatchString(value) {
+			return common.NewMessage("The AppID must be a positive integer")
 		}
-	case "ws_secret":
-		if len(value) < qqBotMinSecretLength {
-			return common.NewMessage("The connection secret must be at least {{length}} characters", map[string]any{"length": qqBotMinSecretLength})
-		}
-	case "command_prefix":
-		if !qqBotPrefixPattern.MatchString(value) {
-			return common.NewMessage("The command prefix must be 1 to 32 characters without spaces or slashes")
+	case "app_secret":
+		if value == "" || strings.ContainsFunc(value, unicode.IsSpace) {
+			return common.NewMessage("The AppSecret must not be empty or contain spaces")
 		}
 	case "sessions":
 		_, err := ParseQQBotSessions(value)

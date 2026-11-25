@@ -396,9 +396,8 @@ export type OperationsSettings = {
   'perf_metrics_setting.bucket_time': 'hour' | 'minute' | '5min'
   'perf_metrics_setting.retention_days': number
   'qq_bot.enabled': boolean
-  'qq_bot.self_id': string
+  'qq_bot.app_id': string
   'qq_bot.user_id': number
-  'qq_bot.command_prefix': string
   'qq_bot.sessions': string
   'qq_bot.hidden_groups': string
   'qq_bot.flow_stages': string

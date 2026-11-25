@@ -65,35 +65,18 @@ const FLOW_STAGES = [
   { value: 'channel', labelKey: 'Channel' },
 ] as const
 
-const MIN_SECRET_LENGTH = 16
-
 const createQQBotSchema = (t: (key: string) => string) =>
   z.object({
     enabled: z.boolean(),
-    self_id: z
+    app_id: z
       .string()
       .trim()
-      .regex(
-        /^([1-9][0-9]*)?$/,
-        t('The bot QQ number must be a positive integer')
-      ),
-    ws_secret: z
+      .regex(/^([1-9][0-9]*)?$/, t('The AppID must be a positive integer')),
+    app_secret: z
       .string()
       .trim()
-      .refine(
-        (value) => value === '' || value.length >= MIN_SECRET_LENGTH,
-        t('The connection secret must be at least 16 characters')
-      ),
+      .regex(/^\S*$/, t('The AppSecret must not be empty or contain spaces')),
     user_id: z.coerce.number().int().min(1),
-    command_prefix: z
-      .string()
-      .trim()
-      .regex(
-        /^[^\s/]{1,32}$/,
-        t(
-          'The command prefix must be 1 to 32 characters without spaces or slashes'
-        )
-      ),
     sessions: z.string(),
     hidden_groups: z.string(),
     flow_stages: z
@@ -112,9 +95,8 @@ type QQBotFormValues = z.output<QQBotSchema>
 
 export type QQBotDefaults = {
   'qq_bot.enabled': boolean
-  'qq_bot.self_id': string
+  'qq_bot.app_id': string
   'qq_bot.user_id': number
-  'qq_bot.command_prefix': string
   'qq_bot.sessions': string
   'qq_bot.hidden_groups': string
   'qq_bot.flow_stages': string
@@ -127,10 +109,9 @@ export type QQBotDefaults = {
 
 const buildFormDefaults = (defaults: QQBotDefaults): QQBotFormInput => ({
   enabled: defaults['qq_bot.enabled'],
-  self_id: defaults['qq_bot.self_id'],
-  ws_secret: '',
+  app_id: defaults['qq_bot.app_id'],
+  app_secret: '',
   user_id: defaults['qq_bot.user_id'],
-  command_prefix: defaults['qq_bot.command_prefix'],
   sessions: defaults['qq_bot.sessions'],
   hidden_groups: defaults['qq_bot.hidden_groups'],
   flow_stages: defaults['qq_bot.flow_stages'].split(',').filter(Boolean),
@@ -166,9 +147,8 @@ export function QQBotSettingsSection({
       .filter((stage) => values.flow_stages.includes(stage))
       .join(',')
     const next: Array<[keyof QQBotDefaults, string | number]> = [
-      ['qq_bot.self_id', values.self_id],
+      ['qq_bot.app_id', values.app_id],
       ['qq_bot.user_id', values.user_id],
-      ['qq_bot.command_prefix', values.command_prefix],
       ['qq_bot.sessions', values.sessions],
       ['qq_bot.hidden_groups', values.hidden_groups],
       ['qq_bot.flow_stages', stages],
@@ -183,8 +163,8 @@ export function QQBotSettingsSection({
         .filter(([key, value]) => value !== defaultValues[key])
         .map(([key, value]) => ({ key, value }))
     // The saved secret is never sent to the browser, so empty means unchanged.
-    if (values.ws_secret) {
-      updates.push({ key: 'qq_bot.ws_secret', value: values.ws_secret })
+    if (values.app_secret) {
+      updates.push({ key: 'qq_bot.app_secret', value: values.app_secret })
     }
     // Last: the server checks enabling against the values saved above.
     if (values.enabled !== defaultValues['qq_bot.enabled']) {
@@ -198,7 +178,7 @@ export function QQBotSettingsSection({
     for (const update of updates) {
       await updateOption.mutateAsync(update)
     }
-    form.setValue('ws_secret', '')
+    form.setValue('app_secret', '')
   }
 
   return (
@@ -211,7 +191,7 @@ export function QQBotSettingsSection({
           />
           <p className='text-muted-foreground text-xs'>
             {t(
-              'Point the NapCat reverse WebSocket client at /onebot/v11/ws on this server, using the secret below as its token.'
+              'Enter the AppID and AppSecret of a bot created on the QQ Open Platform. The master node connects to the QQ gateway; mention the bot in a bound group to run commands.'
             )}
           </p>
 
@@ -236,10 +216,10 @@ export function QQBotSettingsSection({
           <div className='grid grid-cols-1 gap-4 md:grid-cols-4'>
             <FormField
               control={form.control}
-              name='self_id'
+              name='app_id'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('Bot QQ number')}</FormLabel>
+                  <FormLabel>AppID</FormLabel>
                   <FormControl>
                     <Input inputMode='numeric' autoComplete='off' {...field} />
                   </FormControl>
@@ -249,10 +229,10 @@ export function QQBotSettingsSection({
             />
             <FormField
               control={form.control}
-              name='ws_secret'
+              name='app_secret'
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('Connection secret')}</FormLabel>
+                  <FormLabel>AppSecret</FormLabel>
                   <FormControl>
                     <Input
                       type='password'
@@ -292,25 +272,6 @@ export function QQBotSettingsSection({
 
           <FormField
             control={form.control}
-            name='command_prefix'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Command prefix')}</FormLabel>
-                <FormControl>
-                  <Input autoComplete='off' {...field} />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Commands always start with a slash, for example /newapi quota for the prefix newapi. Chats that are not bound get no reply.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
             name='sessions'
             render={({ field }) => (
               <FormItem>
@@ -319,14 +280,14 @@ export function QQBotSettingsSection({
                   <Textarea
                     rows={4}
                     placeholder={
-                      'group:123456\ngroup:234567=paid\nprivate:10001'
+                      'group:0123456789ABCDEF0123456789ABCDEF\ngroup:FEDCBA9876543210FEDCBA9876543210=paid'
                     }
                     {...field}
                   />
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'One chat per line. Add =group to limit a chat to the channels and flow of that group. Anyone in a bound chat can run every command.'
+                    'One QQ group per line. Mention the bot with id in a group to get its line. Add =group to limit a QQ group to the channels and flow of that group. Anyone in a bound QQ group can run every command; unbound groups get no other reply.'
                   )}
                 </FormDescription>
                 <FormMessage />

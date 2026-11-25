@@ -61,11 +61,11 @@ func (t *commandTurn) execute(ctx context.Context, args []string) {
 
 func (t *commandTurn) help() {
 	var b strings.Builder
-	b.WriteString(t.command() + " 子命令：\n\n")
+	b.WriteString("new-api 机器人命令：\n\n")
 	for _, entry := range helpEntries {
-		fmt.Fprintf(&b, "- %s %s：%s\n", t.command(), entry[0], entry[1])
+		fmt.Fprintf(&b, "- %s：%s\n", t.command(entry[0]), entry[1])
 	}
-	b.WriteString("\n仅绑定了 new-api 的会话可以执行以上命令。")
+	b.WriteString("\n仅绑定了 new-api 的会话可以执行以上命令；" + t.command("id") + " 查看当前会话的绑定标识。")
 	t.replyText(b.String())
 }
 
@@ -101,7 +101,7 @@ func (t *commandTurn) quota(ctx context.Context, args []string) {
 	scope, allGroup := withoutAllGroup(args)
 	includeDisabled := len(scope) == 1 && strings.EqualFold(scope[0], allChannelsArg)
 	if len(scope) > 0 && !includeDisabled {
-		t.replyText("用法：" + t.command() + " quota [all]")
+		t.replyText("用法：" + t.command("quota [all]"))
 		return
 	}
 	group := t.group
@@ -240,7 +240,7 @@ func (t *commandTurn) setStatus(ctx context.Context, args []string, enable bool)
 		id, _ = strconv.Atoi(args[0])
 	}
 	if id <= 0 {
-		t.replyText("用法：" + t.command() + " on|off <渠道 ID>")
+		t.replyText("用法：" + t.command("on|off <渠道 ID>"))
 		return
 	}
 	const action = "修改 new-api 渠道状态"
@@ -345,8 +345,8 @@ func (t *commandTurn) updateRouting(ctx context.Context, channels []channel, fie
 }
 
 func (t *commandTurn) setRouting(ctx context.Context, args []string, field routingField) {
-	usage := fmt.Sprintf("用法：%[1]s %[2]s <渠道 ID|all> <%[3]s>（%[4]s）\nall 会修改当前群聊可操作的全部渠道，例如 %[1]s %[2]s all 1",
-		t.command(), field.name, field.label, field.meaning)
+	usage := fmt.Sprintf("用法：%s <渠道 ID|all> <%s>（%s）\nall 会修改当前群聊可操作的全部渠道，例如 %s",
+		t.command(field.name), field.label, field.meaning, t.command(field.name+" all 1"))
 	group := t.group
 	if len(args) != 2 {
 		t.replyText(usage)

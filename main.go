@@ -147,6 +147,11 @@ func main() {
 	// Zhipu Coding Plan peak-hour auto-disable, announced in the bound QQ groups.
 	service.StartZhipuPeakTask(qqbot.NotifyZhipuPeak)
 
+	// QQ allows one gateway session per bot, so only the master node connects.
+	if common.IsMasterNode {
+		go qqbot.Run(context.Background())
+	}
+
 	// ZCode trial plan availability, used to prefer plan channels for the models
 	// their plan still covers.
 	service.StartZcodeTrialPlanTask()

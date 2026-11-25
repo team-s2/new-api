@@ -3,7 +3,7 @@
 - GitHub Actions 发布 Docker 镜像到 `ghcr.io/team-s2/new-api`。
 - GitHub OAuth 支持组织和永久用户 ID 白名单，以及可配置的管理员／超级管理员自动提升；配置和权限语义见 `docs/ai/2610040349-github-oauth-access.md`。
 - 支持 BigModel Coding Plan、Grok Subscription、Antigravity Subscription、Devin Subscription 和 OpenCode Go Subscription。
-- 内置 QQ 机器人（`qqbot/`，OneBot 11 反向 WebSocket），配置和命令见 `docs/ai/2611070300-qq-bot.md`。
+- 内置 QQ 机器人（`qqbot/`，QQ 官方机器人，主节点连接 QQ 网关），配置和命令见 `docs/ai/2611070300-qq-bot.md`。
 - 智谱 Coding Plan 渠道支持高峰期自动禁用（周一至周五 14:00-18:00 UTC+8），按渠道开启，变更时在绑定的 QQ 群发送提示。
 - 支持 ZCode 体验套餐渠道（`zcode-plan` 预设，OAuth JWT 鉴权 + 官方客户端指纹模拟），套餐可用时优先路由，并发上限 3。
 - 主节点按 ZCode 客户端的节奏自动领取智谱 Coding Plan 重置卡（不自动用卡），领取成功时在绑定的 QQ 群发送提示；行为见 `docs/ai/2609051908-bigmodel-coding-plan.md` 的“自动领取”一节。

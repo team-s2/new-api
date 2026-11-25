@@ -2,13 +2,11 @@ package qqbot
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/qqbot/onebot"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
@@ -40,6 +38,8 @@ func NotifyZhipuResetCards(claims []service.ZhipuResetCardClaim) {
 }
 
 // sendChannelGroupNotice preserves the configured group filter for each chat.
+// These are proactive messages: QQ rejects them until the bot is granted
+// proactive messaging, and a failure is only logged.
 func sendChannelGroupNotice(noticeForGroup func(string) string) {
 	settings := *system_setting.GetQQBotSettings()
 	if !settings.Enabled {
@@ -50,20 +50,15 @@ func sendChannelGroupNotice(noticeForGroup func(string) string) {
 		common.SysError(common.LogText("invalid QQ bot sessions: %s", err.Error()))
 		return
 	}
-	peer := defaultApp().server.Peer()
-	if peer == nil {
-		common.SysError(common.LogText("failed to send QQ channel notice: bot is not connected to this node"))
-		return
-	}
+	client := defaultApp().client
 	for session, group := range sessions {
-		groupID, isGroup := strings.CutPrefix(session, "group:")
 		notice := noticeForGroup(group)
-		if !isGroup || notice == "" {
+		if notice == "" {
 			continue
 		}
+		groupID := strings.TrimPrefix(session, "group:")
 		ctx, cancel := context.WithTimeout(context.Background(), channelNoticeBudget)
-		destination := onebot.Event{MessageType: "group", GroupID: json.Number(groupID)}
-		err := peer.Send(ctx, destination, []onebot.Segment{onebot.Text(notice)})
+		err := client.SendGroup(ctx, groupID, notice)
 		cancel()
 		if err != nil {
 			common.SysError(common.LogText("failed to send QQ channel notice to %s: %s", session, err.Error()))

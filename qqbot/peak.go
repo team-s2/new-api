@@ -20,7 +20,7 @@ const (
 // setPeak turns a channel's peak-hour auto-disable on or off. The peak task
 // picks the change up on its next pass and announces any status change.
 func (t *commandTurn) setPeak(ctx context.Context, args []string) {
-	usage := "用法：" + t.command() + " peak <渠道 ID> on|off"
+	usage := "用法：" + t.command("peak <渠道 ID> on|off")
 	if len(args) != 2 || args[1] != "on" && args[1] != "off" {
 		t.replyText(usage)
 		return
