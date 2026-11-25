@@ -54,6 +54,11 @@ func (t *commandTurn) setPeak(ctx context.Context, args []string) {
 			t.fail(action, errors.New("渠道设置不是有效的 JSON"))
 			return
 		}
+		// Unmarshalling a literal null replaces the map with nil, and
+		// assigning into a nil map panics.
+		if setting == nil {
+			setting = map[string]json.RawMessage{}
+		}
 	}
 	verb := "关闭"
 	if enable {

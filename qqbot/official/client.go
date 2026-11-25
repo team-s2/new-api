@@ -234,14 +234,17 @@ func (c *Client) ReplyImage(ctx context.Context, m *Message, caption string, png
 	if file.Info == "" {
 		return errors.New("QQ image upload returned no file_info")
 	}
+	// QQ requires a content value on rich media messages even when there is
+	// nothing to say, so an empty caption degenerates to a single space.
+	if caption == "" {
+		caption = " "
+	}
 	payload := map[string]any{
 		"msg_type": 7,
 		"media":    map[string]string{"file_info": file.Info},
+		"content":  caption,
 		"msg_id":   m.ID,
 		"msg_seq":  m.seq.Add(1),
-	}
-	if caption != "" {
-		payload["content"] = caption
 	}
 	return c.api(ctx, http.MethodPost, groupPath(m.Group)+"/messages", payload, nil)
 }

@@ -28,11 +28,13 @@ const (
 	// into the same intent, and the bot ignores them.
 	intentGroupMessages = 1 << 25
 
-	maxFrame     = 4 << 20
-	helloTimeout = 20 * time.Second
-	writeTimeout = 10 * time.Second
-	idleRecheck  = 10 * time.Second
-	maxBackoff   = time.Minute
+	maxFrame             = 4 << 20
+	maxHeartbeatInterval = 10 * 60 * 1000 // milliseconds; real values are ~40s
+	stableConnection     = time.Minute
+	helloTimeout         = 20 * time.Second
+	writeTimeout         = 10 * time.Second
+	idleRecheck          = 10 * time.Second
+	maxBackoff           = time.Minute
 )
 
 var errCredentialsChanged = errors.New("QQ bot credentials changed")
@@ -67,6 +69,7 @@ func (c *Client) Run(ctx context.Context) {
 		if s.credentials != credentials {
 			s = session{credentials: credentials}
 		}
+		started := time.Now()
 		ready, err := c.connect(ctx, &s)
 		if ctx.Err() != nil {
 			return
@@ -78,7 +81,10 @@ func (c *Client) Run(ctx context.Context) {
 		if err != nil {
 			common.SysError(common.LogText("QQ gateway unavailable: %s", err.Error()))
 		}
-		if ready {
+		// A session that drops again right away must not reset the backoff:
+		// two instances fighting over one bot, or a server that keeps killing
+		// fresh sessions, would otherwise reconnect every second.
+		if ready && time.Since(started) >= stableConnection {
 			backoff = time.Second
 		}
 		sleep(ctx, backoff)
@@ -127,7 +133,10 @@ func (c *Client) connect(ctx context.Context, s *session) (bool, error) {
 	var timing struct {
 		Interval int64 `json:"heartbeat_interval"`
 	}
-	if hello.Op != opHello || common.Unmarshal(hello.Data, &timing) != nil || timing.Interval <= 0 {
+	// An absurd interval is rejected rather than trusted: real values are
+	// around 40 seconds, and a huge one overflows when scaled to nanoseconds,
+	// which would panic the ticker and take the process down.
+	if hello.Op != opHello || common.Unmarshal(hello.Data, &timing) != nil || timing.Interval <= 0 || timing.Interval > maxHeartbeatInterval {
 		return false, errors.New("invalid QQ gateway hello")
 	}
 	_ = conn.SetReadDeadline(time.Time{})

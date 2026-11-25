@@ -20,8 +20,9 @@ import (
 
 const (
 	maxConcurrent = 8
-	// commandDeadline stays inside QQ's five-minute passive reply window, so a
-	// command that runs out of time can still say so.
+	// commandDeadline stays well inside QQ's one-hour passive reply window,
+	// so a command that runs out of time can still say so without hanging in
+	// the chat for long.
 	commandDeadline = 4 * time.Minute
 	replyDeadline   = time.Minute
 )
