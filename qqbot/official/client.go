@@ -23,7 +23,7 @@ import (
 
 const (
 	tokenURL    = "https://bots.qq.com/app/getAppAccessToken"
-	apiBase     = "https://api.sgroup.qq.com"
+	apiBase     = "https://api.bot.qq.com"
 	maxResponse = 1 << 20
 )
 
@@ -136,11 +136,18 @@ func (c *Client) call(ctx context.Context, method, endpoint, appID, token string
 	}
 	var status struct {
 		Code    int    `json:"code"`
+		ErrCode int    `json:"err_code"`
 		Message string `json:"message"`
 	}
 	_ = common.Unmarshal(raw, &status)
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices || status.Code != 0 {
-		return &APIError{Status: resp.StatusCode, Code: status.Code, Message: status.Message}
+	// Current documentation names the business error err_code while older
+	// responses carry code; QQ sends both today, so accept either.
+	code := status.ErrCode
+	if code == 0 {
+		code = status.Code
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices || code != 0 {
+		return &APIError{Status: resp.StatusCode, Code: code, Message: status.Message}
 	}
 	if out == nil {
 		return nil
@@ -217,6 +224,7 @@ func (c *Client) ReplyImage(ctx context.Context, m *Message, caption string, png
 	}
 	err := c.api(ctx, http.MethodPost, groupPath(m.Group)+"/files", map[string]any{
 		"file_type":    1,
+		"file_name":    "newapi.png",
 		"file_data":    base64.StdEncoding.EncodeToString(png),
 		"srv_send_msg": false,
 	}, &file)

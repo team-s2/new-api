@@ -177,8 +177,13 @@ func (c *Client) connect(ctx context.Context, s *session) (bool, error) {
 		case <-ctx.Done():
 			return ready, ctx.Err()
 		case err := <-readErr:
-			// These close codes mean the session cannot be resumed.
-			if websocket.IsCloseError(err, 4006, 4007, 4009) {
+			// QQ documents which close codes forbid resume: 4006/4007 and the
+			// internal errors 4900-4913 must identify again. Network drops carry
+			// no close code, and 4008/4009 keep a resumable session, so anything
+			// else tries resume first and falls back through op 9 when the server
+			// no longer accepts it.
+			var closeErr *websocket.CloseError
+			if errors.As(err, &closeErr) && (closeErr.Code == 4006 || closeErr.Code == 4007 || closeErr.Code >= 4900 && closeErr.Code <= 4913) {
 				*s = session{credentials: s.credentials}
 			}
 			return ready, err
@@ -206,7 +211,11 @@ func (c *Client) connect(ctx context.Context, s *session) (bool, error) {
 			case opReconnect:
 				return ready, nil
 			case opInvalidSession:
-				*s = session{credentials: s.credentials}
+				// A d of true means the session can still be resumed, as in the
+				// QQ SDKs and pigapi; anything else means it is gone.
+				if string(f.Data) != "true" {
+					*s = session{credentials: s.credentials}
+				}
 				return ready, errors.New("QQ gateway rejected the session")
 			case opDispatch:
 				if f.Seq != nil {
@@ -230,9 +239,10 @@ func (c *Client) connect(ctx context.Context, s *session) (bool, error) {
 				case "RESUMED":
 					ready = true
 				case "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
-					if ready {
-						c.dispatch(f.Type, f.Data)
-					}
+					// A resumed session replays missed events before RESUMED
+					// arrives, so these must not wait for ready. Replay overlap
+					// with events already handled is filtered by message id.
+					c.dispatch(f.Type, f.Data)
 				}
 			}
 		}
