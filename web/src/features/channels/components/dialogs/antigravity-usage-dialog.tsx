@@ -442,7 +442,7 @@ export function AntigravityUsageDialog({
             </div>
           )}
 
-          {usage.quota_groups && usage.quota_groups.length > 0 && (
+          {usage.quota_groups && usage.quota_groups.length > 0 ? (
             <div className='space-y-4'>
               <div className='text-sm font-medium'>{t('Quota windows')}</div>
               {usage.quota_groups.map((group) => (
@@ -452,6 +452,10 @@ export function AntigravityUsageDialog({
                   locale={intlLocale}
                 />
               ))}
+            </div>
+          ) : (
+            <div className='text-muted-foreground rounded-lg border p-4 text-xs'>
+              {t('No quota window reported by upstream.')}
             </div>
           )}
         </div>

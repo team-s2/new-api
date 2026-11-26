@@ -846,8 +846,8 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 		}
 	}
 	// Second pass for rows that blank part of the grid: failed rows paint over
-	// all three axes to print their error or grouped quotas, and Grok rows blank
-	// the card axis for their monthly cell. This runs after the now lines.
+	// all three axes to print their error or grouped quotas, and rows with a
+	// monthly allowance blank the card axis for it. This runs after the now lines.
 	y = rowsTop
 	for i := range supported {
 		row := &supported[i]
@@ -860,9 +860,6 @@ func Quota(rows []QuotaRow, now float64, fontPath string, hidden map[string]bool
 			blankRowCells(p, priorityValue+12, y, row.height(), rowsBottom)
 			drawQuotaBuckets(p, y, row.QuotaBuckets, now)
 		} else if row.Monthly != nil {
-			blankRowCells(p, cardLabel-6, y, row.height(), rowsBottom)
-			drawMonthlyCell(p, y+rowHeight/2, row, cardScale, now)
-		} else if row.Provider == ProviderGrok {
 			blankRowCells(p, cardLabel-6, y, row.height(), rowsBottom)
 			drawMonthlyCell(p, y+rowHeight/2, row, cardScale, now)
 		}
