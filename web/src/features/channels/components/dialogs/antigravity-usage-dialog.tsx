@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, RefreshCw } from 'lucide-react'
+import { Info, Loader2, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -26,20 +26,30 @@ import { Dialog } from '@/components/dialog'
 import { ErrorState } from '@/components/error-state'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { toIntlLocale } from '@/i18n/languages'
+import { formatPercent } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
   createServerError,
   getServerErrorMessage,
   requireServerSuccess,
 } from '@/lib/server-error-message'
+import { cn } from '@/lib/utils'
 
 import {
   getAntigravityUsage,
   refreshAntigravityCredential,
-  type AntigravityModelQuota,
+  type AntigravityQuotaBucket,
+  type AntigravityQuotaGroup,
 } from '../../api'
 import { channelsQueryKeys } from '../../lib'
 import type { Channel } from '../../types'
@@ -65,44 +75,200 @@ function clampPercent(value: number | undefined): number {
   return Math.max(0, Math.min(100, value))
 }
 
-function ModelQuotaCard(props: {
-  item: AntigravityModelQuota
+// quotaGroupLabel names an allowance by its stable key, falling back to the
+// upstream display name for groups the gateway does not classify.
+function quotaGroupLabel(
+  group: AntigravityQuotaGroup,
+  t: (key: string) => string
+): string {
+  switch (group.group_key) {
+    case 'antigravity-gemini-models':
+      return t('Gemini models')
+    case 'antigravity-claude-and-gpt-models':
+      return t('Claude and GPT models')
+    case 'antigravity-gemini-4-argon':
+      return t('Gemini 4 Argon')
+    default:
+      return group.display_name || t('Quota windows')
+  }
+}
+
+function quotaWindowLabel(
+  window: string | undefined,
+  fallback: string | undefined,
+  t: (key: string) => string
+): string {
+  switch ((window ?? '').toLowerCase()) {
+    case 'weekly':
+    case 'week':
+      return t('Weekly window')
+    case '5h':
+    case 'five-hour':
+    case 'five_hour':
+      return t('5-hour window')
+    default:
+      return fallback || t('Window')
+  }
+}
+
+const percentTextClassName: Record<'danger' | 'warning' | 'info', string> = {
+  danger: 'text-destructive',
+  warning: 'text-warning',
+  info: 'text-info',
+}
+
+// quotaPercentVariant colours a window by how much of it is already consumed.
+function quotaPercentVariant(
+  usedPercent: number
+): 'danger' | 'warning' | 'info' {
+  if (usedPercent >= 95) {
+    return 'danger'
+  }
+  if (usedPercent >= 80) {
+    return 'warning'
+  }
+  return 'info'
+}
+
+// quotaGroupHint explains an allowance in one short line. The upstream sends a
+// long English paragraph (plan marketing for Argon, a model list for the shared
+// pools), so the dialog states the rule itself and keeps the raw text out of the
+// layout.
+function quotaGroupHint(
+  group: AntigravityQuotaGroup,
+  t: (key: string) => string
+): string {
+  switch (group.group_key) {
+    case 'antigravity-gemini-models':
+      return t(
+        'Gemini 4 Hydrogen and the Flash models share this 5-hour and weekly allowance.'
+      )
+    case 'antigravity-claude-and-gpt-models':
+      return t('Claude and GPT models share this 5-hour and weekly allowance.')
+    case 'antigravity-gemini-4-argon':
+      return t(
+        'A separate weekly allowance for Gemini 4 Argon. Ultra plans include a larger Argon share inside the Gemini pool.'
+      )
+    default:
+      return group.description ?? ''
+  }
+}
+
+// QuotaWindowCard shows one window (a 5-hour or weekly bucket) of an allowance,
+// laid out like the Coding Plan cards: the remaining share on top, the bar below
+// and the reset time last.
+function QuotaWindowCard(props: {
+  bucket: AntigravityQuotaBucket
   locale: string | undefined
 }) {
   const { t } = useTranslation()
-  const { item, locale } = props
-  const used = clampPercent(item.used_percent)
-  const remaining = clampPercent(item.remaining_percent)
-  const resetText = formatIsoTime(item.reset_time, locale)
+  const bucket = props.bucket
+  const fraction = bucket.remaining_fraction
+  const hasFraction = typeof fraction === 'number'
+  const remaining = hasFraction ? clampPercent(fraction * 100) : 0
+  const used = hasFraction ? 100 - remaining : 0
+  const resetText = formatIsoTime(bucket.reset_time, props.locale)
+  const windowLabel = quotaWindowLabel(bucket.window, bucket.display_name, t)
 
   return (
-    <div className='space-y-2 rounded-lg border p-3.5'>
-      <div className='flex flex-wrap items-center justify-between gap-2'>
-        <div className='min-w-0'>
-          <div className='truncate text-sm font-medium'>
-            {item.display_name || item.model}
-          </div>
-          {item.display_name && item.display_name !== item.model && (
-            <div className='text-muted-foreground truncate font-mono text-xs'>
-              {item.model}
-            </div>
+    <Card size='sm' className='gap-0 py-0'>
+      <CardHeader className='p-3 pb-2'>
+        <div className='flex items-start justify-between gap-2'>
+          <CardTitle className='text-sm font-semibold'>{windowLabel}</CardTitle>
+          {bucket.disabled && (
+            <StatusBadge
+              label={t('Disabled')}
+              variant='neutral'
+              size='sm'
+              copyable={false}
+              showDot={false}
+            />
           )}
         </div>
-        {typeof item.remaining_percent === 'number' ? (
-          <span className='font-mono text-xs font-semibold tabular-nums'>
-            {remaining.toFixed(1)}% {t('remaining')}
+      </CardHeader>
+      <CardContent className='flex flex-col gap-2 p-3 pt-0'>
+        <div className='flex items-end justify-between gap-3'>
+          <span className='flex items-baseline gap-1.5'>
+            <span
+              className={cn(
+                'text-2xl leading-none font-semibold tabular-nums',
+                hasFraction
+                  ? percentTextClassName[quotaPercentVariant(used)]
+                  : 'text-muted-foreground'
+              )}
+            >
+              {hasFraction ? formatPercent(remaining) : '-'}
+            </span>
+            <span className='text-muted-foreground text-xs'>
+              {t('remaining')}
+            </span>
           </span>
+          <span className='text-muted-foreground text-xs tabular-nums'>
+            {t('Used')}: {hasFraction ? formatPercent(used) : '-'}
+          </span>
+        </div>
+        {hasFraction ? (
+          <Progress
+            value={used}
+            aria-label={`${windowLabel}: ${formatPercent(used)}`}
+          />
         ) : (
-          <span className='text-muted-foreground text-xs'>-</span>
+          <div className='bg-muted h-2 rounded-full' />
+        )}
+        <p className='text-muted-foreground text-xs'>
+          {t('Reset time:')} {resetText ?? '-'}
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
+// QuotaGroupSection shows one allowance: its name, an info icon carrying the
+// explanation, and a card per reported window. Argon is never folded into Gemini
+// because it drains on its own schedule.
+function QuotaGroupSection(props: {
+  group: AntigravityQuotaGroup
+  locale: string | undefined
+}) {
+  const { t } = useTranslation()
+  const group = props.group
+  const buckets = group.buckets ?? []
+  const hint = quotaGroupHint(group, t)
+
+  return (
+    <div className='space-y-2'>
+      <div className='flex items-center gap-1.5'>
+        <span className='text-sm font-medium'>{quotaGroupLabel(group, t)}</span>
+        {hint && (
+          <TooltipProvider delay={100}>
+            <Tooltip>
+              <TooltipTrigger
+                aria-label={t('What this allowance covers')}
+                className='text-muted-foreground/60 hover:text-muted-foreground focus-visible:ring-ring shrink-0 rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none'
+              >
+                <Info className='size-3.5' aria-hidden='true' />
+              </TooltipTrigger>
+              <TooltipContent side='top' className='max-w-xs leading-relaxed'>
+                {hint}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
-      {typeof item.used_percent === 'number' && (
-        <Progress value={used} className='h-2' />
-      )}
-      {resetText && (
-        <p className='text-muted-foreground text-xs'>
-          {t('Resets at')}: {resetText}
-        </p>
+      {buckets.length > 0 ? (
+        <div className='grid gap-2.5 sm:grid-cols-2'>
+          {buckets.map((bucket, index) => (
+            <QuotaWindowCard
+              key={bucket.bucket_id || `${bucket.window}-${index}`}
+              bucket={bucket}
+              locale={props.locale}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className='text-muted-foreground rounded-lg border p-3 text-xs'>
+          {t('No quota window reported by upstream.')}
+        </div>
       )}
     </div>
   )
@@ -276,22 +442,20 @@ export function AntigravityUsageDialog({
             </div>
           )}
 
-          {usage.models && usage.models.length > 0 ? (
-            <div className='space-y-2'>
-              <div className='text-sm font-medium'>{t('Model Quotas')}</div>
-              <div className='grid gap-2.5 sm:grid-cols-2'>
-                {usage.models.map((item) => (
-                  <ModelQuotaCard
-                    key={item.model}
-                    item={item}
-                    locale={intlLocale}
-                  />
-                ))}
-              </div>
+          {usage.quota_groups && usage.quota_groups.length > 0 ? (
+            <div className='space-y-4'>
+              <div className='text-sm font-medium'>{t('Quota windows')}</div>
+              {usage.quota_groups.map((group) => (
+                <QuotaGroupSection
+                  key={group.group_key || group.display_name || 'quota-group'}
+                  group={group}
+                  locale={intlLocale}
+                />
+              ))}
             </div>
           ) : (
             <div className='text-muted-foreground rounded-lg border p-4 text-xs'>
-              {t('No model quota details returned by upstream.')}
+              {t('No quota window reported by upstream.')}
             </div>
           )}
         </div>
