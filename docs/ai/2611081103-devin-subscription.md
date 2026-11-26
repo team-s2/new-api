@@ -29,7 +29,7 @@
 
 Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 
-1. 授权页：`https://app.devin.ai/auth/cli/continue?state=…&prompt=select_account&code_challenge=…&code_challenge_method=S256`；无 `redirect_uri` 时加 `cli_pkce_marker=1`，授权完成后浏览器直接展示 code 文本（手动粘贴模式，适合服务器端部署，语义同 Antigravity 的粘贴回调 URL）。
+1. 授权页：`https://app.devin.ai/auth/cli/continue?state=…&prompt=select_account&code_challenge=…&code_challenge_method=S256`；无 `redirect_uri` 时加 `cli_pkce_marker=1`，授权完成后浏览器直接展示 code 文本（手动粘贴模式，适合服务器端部署，语义同 Antigravity 的粘贴回调 URL）。**切勿携带 `redirect_uri`**（包括遗留的 `chisel-show-auth-token`）：服务端会报 "Invalid redirect URI"。2026-11-26 用官方 CLI v3000.14.30821 手动流（`auth login --force-manual-token-flow`）实测确认其 URL 不含 `redirect_uri`/`client_id`，并用真实账号走通登录全流程；token 端点实测只接受 JSON body（form 编码返回 422）。
 2. 换取 token：`POST https://api.devin.ai/auth/cli/token`，JSON `{code, code_verifier}` → `{token}`（JWT 形态，前缀补 `devin-session-token$`）。
 3. 账户信息：`GET https://api.devin.ai/v3/self`，`Bearer <token>` → `{user_name, user_id, org_id}`。
 

@@ -17,17 +17,19 @@ import (
 	"github.com/QuantumNous/new-api/common"
 )
 
-// Devin subscription OAuth, reverse engineered from the official devin-cli
-// (strings in the installed binary confirm the endpoints): PKCE
-// authorization-code flow against app.devin.ai/auth/cli/continue whose
-// redirect_uri is the literal marker `chisel-show-auth-token` — the web page
-// then displays the authorization code for manual paste, which suits a
-// server-side gateway that cannot host a loopback listener.
+// Devin subscription OAuth, reverse engineered from the official devin-cli:
+// PKCE authorization-code flow against app.devin.ai/auth/cli/continue. The
+// request must NOT carry a redirect_uri — with cli_pkce_marker=1 the endpoint
+// itself is the manual-paste flow, and the page displays the authorization
+// code after sign-in, which suits a server-side gateway that cannot host a
+// loopback listener. Passing any redirect_uri (including the legacy
+// `chisel-show-auth-token` marker) fails validation with "Invalid redirect
+// URI"; the official CLI's manual flow omits it, as verified end-to-end
+// against the live service.
 const (
 	devinOAuthAuthorizeURL = "https://app.devin.ai/auth/cli/continue"
 	devinOAuthTokenURL     = "https://api.devin.ai/auth/cli/token"
 	devinOAuthSelfURL      = "https://api.devin.ai/v3/self"
-	devinOAuthRedirectURI  = "chisel-show-auth-token"
 	devinOAuthSessionTTL   = 10 * time.Minute
 	devinOAuthHTTPTimeout  = 30 * time.Second
 )
@@ -91,7 +93,6 @@ func StartDevinOAuthLogin(ownerSession string) (*DevinOAuthAuthURL, error) {
 	}
 
 	params := url.Values{}
-	params.Set("redirect_uri", devinOAuthRedirectURI)
 	params.Set("state", state)
 	params.Set("prompt", "select_account")
 	params.Set("code_challenge", codeChallenge)
