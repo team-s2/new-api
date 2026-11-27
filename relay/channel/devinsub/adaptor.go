@@ -61,7 +61,7 @@ func (a *Adaptor) SetupRequestHeader(_ *gin.Context, _ *http.Header, _ *relaycom
 func openAIRequestToDevin(c *gin.Context, request *dto.GeneralOpenAIRequest, info *relaycommon.RelayInfo) (*devinUpstreamRequest, error) {
 	modelUID, ok := ResolveModelUID(request.Model)
 	if !ok {
-		return nil, fmt.Errorf("devin subscription channel only serves swe-2 / swe-2-flash family models, got %q", request.Model)
+		return nil, fmt.Errorf("devin subscription channel only serves swe-2 / swe-2-1 / swe-2-flash family models, got %q", request.Model)
 	}
 
 	var systemParts []string
@@ -219,7 +219,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	}
 	modelUID, ok := ResolveModelUID(upReq.Model)
 	if !ok {
-		return nil, fmt.Errorf("devin subscription channel only serves swe-2 / swe-2-flash family models, got %q", upReq.Model)
+		return nil, fmt.Errorf("devin subscription channel only serves swe-2 / swe-2-1 / swe-2-flash family models, got %q", upReq.Model)
 	}
 	upReq.Model = modelUID
 

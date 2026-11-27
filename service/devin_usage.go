@@ -118,7 +118,7 @@ func decodeDevinUserStatus(payload []byte, probe *DevinUsageProbe) {
 }
 
 // decodeDevinModelCatalog parses GetCliModelConfigsResponse and keeps only the
-// two SWE-2 families this channel serves.
+// SWE-2, SWE-2.1, and SWE-2 Flash families this channel serves.
 func decodeDevinModelCatalog(payload []byte, probe *DevinUsageProbe) {
 	fields := devinDecodeWireFields(payload)
 	if uid := strings.ToLower(strings.TrimSpace(devinFirstString(fields, 4))); uid != "" {
@@ -155,8 +155,9 @@ func decodeDevinModelCatalog(payload []byte, probe *DevinUsageProbe) {
 }
 
 // FetchDevinChannelModels queries the account model catalog and returns the
-// SWE-2 model_uids the channel can serve, plus the bare family aliases when
-// the corresponding high-effort model is enabled in the catalog.
+// SWE-2, SWE-2.1, and SWE-2 Flash model_uids the channel can serve, plus the
+// bare SWE-2 / SWE-2 Flash aliases when the corresponding high-effort model is
+// enabled in the catalog.
 func FetchDevinChannelModels(channel *model.Channel) ([]string, error) {
 	key, _, apiErr := channel.GetNextEnabledKey()
 	if apiErr != nil {
@@ -192,7 +193,7 @@ func FetchDevinChannelModels(channel *model.Channel) ([]string, error) {
 		}
 	}
 	if len(models) == 0 {
-		return nil, errors.New("devin subscription channel: catalog returned no swe-2 family models")
+		return nil, errors.New("devin subscription channel: catalog returned no swe-2 / swe-2-1 / swe-2-flash family models")
 	}
 	slices.Sort(models)
 	if hasFlash {

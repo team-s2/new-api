@@ -182,6 +182,7 @@ Devin CLI 登录是公开客户端 PKCE 流（无 client_id/client_secret）：
 - `GetUserStatus`/`GetCliModelConfigs` 为 **unary** RPC：必须用 `application/proto` + 原始 protobuf body；`connect+proto` 信封返回 415（已修正 `postDevinConnectRPC`）。
 - `GetChatMessage` 为服务端流：`connect+proto` 信封，流式/非流式端到端通过——reasoning、content、finish_reason、真实 usage（含 `cached_tokens`，观察到 prompt cache 命中 448/471）均正确。
 - 目录实测（260 条）中 swe-2 家族共 9 个 uid：`swe-2-{medium,high,max}` + `swe-2-{medium,high,max}-lightning`（cost_tier 3，更低）+ `swe-2-flash-{medium,high,max}`；`-low` 与 `-usa` 变体未在目录中（保留在白名单内，上游拒绝时走 trailer 错误透出）。`-lightning` 变体已加入白名单并实测 `swe-2-max-lightning` 正常返回。
+- 2026-11-27 对照线上 `GetCliModelConfigs`（318 条）补充白名单至 31 个模型：新增 12 个 `swe-2-1` 系列 UID（`swe-2-1`、`swe-2-1-{low,medium,high,xhigh,max}`、`swe-2-1-lightning`、`swe-2-1-{low,medium,high,xhigh,max}-lightning`，其中 `swe-2-1` 与 `swe-2-1-lightning` 为上游独立 `model_uid`，原样透传）及 3 个 `swe-2-flash-{medium,high,max}-lightning`；同步更新 [`common/devin_models.go`](../../common/devin_models.go) 与错误文案。
 - 当时通过 service 侧镜像名单对齐模型过滤；这只能保证协议支持的 UID 一致，不能保证账户权限或上游可用性。
 - `GetUserStatus` 的 credits/can_use_* 字段号系猜测，实测值不可信（cli=false 但账号实际可用）；这些历史观测保留供后续抓包校正，当前接口和界面已移除这些未验证字段。
 - 未验证：`cog_*` 铸新路径（本机凭据只有 session token）；OAuth 全链路（authorize 页需人工登录）；多模态/tools。

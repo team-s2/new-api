@@ -13,8 +13,8 @@ const (
 	defaultMaxTokens = 128000
 )
 
-// ModelList exposes only the two SWE-2 families. Bare names alias to the
-// high-effort tier, matching devin-cli defaults.
+// ModelList exposes the SWE-2, SWE-2.1, and SWE-2 Flash families. Bare SWE-2
+// and SWE-2 Flash names alias to the high-effort tier, matching devin-cli defaults.
 var ModelList = common.DevinModels()
 
 // ResolveModelUID maps a client-facing model name to the upstream
